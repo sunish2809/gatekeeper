@@ -54,7 +54,7 @@ class GatewayRoutingTest {
     }
 
     private RouteRule rule(String path, Set<String> methods) {
-        return new RouteRule("r", "c", "key", Set.of(), path, "http://localhost:9000",
+        return new RouteRule("r", "c", "key", "admin", path, "http://localhost:9000",
                 methods, 1000, true, Set.of(), 10, 60, false, true, Map.of(), false);
     }
 }

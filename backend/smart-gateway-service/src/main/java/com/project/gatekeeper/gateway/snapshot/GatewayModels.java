@@ -18,8 +18,12 @@ public final class GatewayModels {
             String apiKey,
             boolean active,
             List<String> roles,
-            List<RouteSnapshot> routes
+            List<RouteSnapshot> routes,
+            String adminId
     ) {
+    }
+
+    public record Caller(String clientId, String adminId, Set<String> roles) {
     }
 
     public record RouteSnapshot(
@@ -44,7 +48,7 @@ public final class GatewayModels {
             String routeId,
             String clientId,
             String apiKey,
-            Set<String> clientRoles,
+            String adminId,
             String publicPath,
             String targetUrl,
             Set<String> methods,

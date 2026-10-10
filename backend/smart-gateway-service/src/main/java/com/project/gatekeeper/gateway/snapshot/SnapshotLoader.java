@@ -1,5 +1,6 @@
 package com.project.gatekeeper.gateway.snapshot;
 
+import com.project.gatekeeper.gateway.snapshot.GatewayModels.Caller;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.ClientSnapshot;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.RouteRule;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.RouteSnapshot;
@@ -13,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -51,7 +53,7 @@ public class SnapshotLoader implements ApplicationRunner {
                     .retrieve()
                     .body(SnapshotResponse.class);
             List<RouteRule> rules = flatten(snapshot);
-            store.replace(rules);
+            store.replace(rules, callers(snapshot));
             log.info("Loaded {} route(s) into memory", rules.size());
         } catch (RuntimeException ex) {
             log.warn("Route snapshot was not refreshed. Keeping the previous in-memory routes. {}", ex.getMessage());
@@ -75,7 +77,7 @@ public class SnapshotLoader implements ApplicationRunner {
                         route.id(),
                         client.id(),
                         client.apiKey(),
-                        setOf(client.roles()),
+                        client.adminId(),
                         route.publicPath(),
                         route.targetUrl(),
                         methods(route.methods()),
@@ -91,6 +93,19 @@ public class SnapshotLoader implements ApplicationRunner {
             }
         }
         return rules;
+    }
+
+    private Map<String, Caller> callers(SnapshotResponse snapshot) {
+        Map<String, Caller> callers = new HashMap<>();
+        if (snapshot == null || snapshot.clients() == null) {
+            return callers;
+        }
+        for (ClientSnapshot client : snapshot.clients()) {
+            if (client.active() && client.apiKey() != null) {
+                callers.put(client.apiKey(), new Caller(client.id(), client.adminId(), setOf(client.roles())));
+            }
+        }
+        return callers;
     }
 
     private Set<String> setOf(List<String> values) {

@@ -1,6 +1,8 @@
 package com.project.gatekeeper.management.web;
 
+import com.project.gatekeeper.management.config.CorrelationFilter;
 import com.project.gatekeeper.management.service.CatalogService;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -71,7 +73,7 @@ public class ConsoleController {
         }
         long started = System.nanoTime();
         try {
-            HttpRequest.Builder builder = HttpRequest.newBuilder(URI.create(gatewayUrl + path))
+            HttpRequest.Builder builder = correlated(HttpRequest.newBuilder(URI.create(gatewayUrl + path)))
                     .timeout(Duration.ofSeconds(15));
             if (request.apiKey() != null && !request.apiKey().isBlank()) {
                 builder.header("X-Api-Key", request.apiKey().trim());
@@ -111,7 +113,7 @@ public class ConsoleController {
         catalog.getClient(clientId);
         String url = analyticsUrl + "/api/overview?clientId=" + clientId.trim();
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest request = correlated(HttpRequest.newBuilder(URI.create(url)))
                     .timeout(Duration.ofSeconds(3))
                     .header("X-Admin-Key", adminApiKey)
                     .GET()
@@ -135,7 +137,7 @@ public class ConsoleController {
             url = url + "&clientId=" + clientId.trim();
         }
         try {
-            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+            HttpRequest request = correlated(HttpRequest.newBuilder(URI.create(url)))
                     .timeout(Duration.ofSeconds(3))
                     .header("X-Admin-Key", adminApiKey)
                     .GET()
@@ -149,6 +151,11 @@ public class ConsoleController {
                     .header("Content-Type", "application/json")
                     .body("{\"error\":\"analytics_unavailable\",\"message\":\"" + escape(ex.getMessage()) + "\"}");
         }
+    }
+
+    private HttpRequest.Builder correlated(HttpRequest.Builder builder) {
+        String correlationId = MDC.get("correlationId");
+        return correlationId == null ? builder : builder.header(CorrelationFilter.HEADER, correlationId);
     }
 
     private Probe probe(String url) {

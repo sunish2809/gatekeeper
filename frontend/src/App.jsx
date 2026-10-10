@@ -20,6 +20,7 @@ export default function App() {
   const [routeForm, setRouteForm] = useState(emptyRoute);
   const [clientName, setClientName] = useState("");
   const [clientKey, setClientKey] = useState("");
+  const [clientRoles, setClientRoles] = useState("");
   const [call, setCall] = useState({
     method: "GET",
     path: "",
@@ -125,10 +126,11 @@ export default function App() {
     try {
       const created = await run("/api/clients", {
         method: "POST",
-        body: JSON.stringify({ name: clientName, apiKey: clientKey, roles: ["caller"] })
+        body: JSON.stringify({ name: clientName, apiKey: clientKey, roles: splitList(clientRoles) })
       });
       setClientName("");
       setClientKey("");
+      setClientRoles("");
       setCall((current) => ({ ...current, apiKey: created.apiKey }));
       await refresh();
       setSelectedId(created.id);
@@ -150,7 +152,8 @@ export default function App() {
         name: routeForm.name,
         publicPath: routeForm.publicPath,
         targetUrl: routeForm.targetUrl,
-        methods: routeForm.methods.split(",").map((method) => method.trim()).filter(Boolean),
+        methods: splitList(routeForm.methods),
+        allowedRoles: splitList(routeForm.allowedRoles),
         authRequired: routeForm.authRequired,
         stripPrefix: routeForm.stripPrefix,
         idempotentPost: routeForm.idempotentPost,
@@ -200,6 +203,7 @@ export default function App() {
       publicPath: route.publicPath,
       targetUrl: route.targetUrl,
       methods: (route.methods || []).join(","),
+      allowedRoles: (route.allowedRoles || []).join(","),
       rateLimit: String(route.rateLimit),
       authRequired: route.authRequired,
       stripPrefix: route.stripPrefix,
@@ -279,13 +283,15 @@ export default function App() {
             <div className="row">
               <div>
                 <label htmlFor="clientName">Name</label>
-                <input id="clientName" value={clientName} placeholder="demo-shop" onChange={(event) => setClientName(event.target.value)} />
+                <input id="clientName" value={clientName} placeholder="shop" onChange={(event) => setClientName(event.target.value)} />
               </div>
               <div>
                 <label htmlFor="clientKey">API key</label>
-                <input id="clientKey" value={clientKey} placeholder="gk_demo_shop" onChange={(event) => setClientKey(event.target.value)} />
+                <input id="clientKey" value={clientKey} placeholder="gk_shop" onChange={(event) => setClientKey(event.target.value)} />
               </div>
             </div>
+            <label htmlFor="clientRoles">Roles</label>
+            <input id="clientRoles" value={clientRoles} placeholder="orders, news" onChange={(event) => setClientRoles(event.target.value)} />
             <div className="actions">
               <button type="button" onClick={createClientRecord}>Create client</button>
             </div>
@@ -312,11 +318,11 @@ export default function App() {
               </div>
               <div>
                 <label htmlFor="publicPath">Public path</label>
-                <input id="publicPath" value={routeForm.publicPath} placeholder="/try" onChange={(event) => setRouteForm({ ...routeForm, publicPath: event.target.value })} />
+                <input id="publicPath" value={routeForm.publicPath} placeholder="/shop" onChange={(event) => setRouteForm({ ...routeForm, publicPath: event.target.value })} />
               </div>
             </div>
             <label htmlFor="targetUrl">Target URL</label>
-            <input id="targetUrl" value={routeForm.targetUrl} placeholder="http://localhost:9000" onChange={(event) => setRouteForm({ ...routeForm, targetUrl: event.target.value })} />
+            <input id="targetUrl" value={routeForm.targetUrl} placeholder="https://api.example.com" onChange={(event) => setRouteForm({ ...routeForm, targetUrl: event.target.value })} />
             <div className="row">
               <div>
                 <label htmlFor="methods">Methods</label>
@@ -327,6 +333,9 @@ export default function App() {
                 <input id="rateLimit" value={routeForm.rateLimit} onChange={(event) => setRouteForm({ ...routeForm, rateLimit: event.target.value })} />
               </div>
             </div>
+            <label htmlFor="allowedRoles">Allowed roles</label>
+            <input id="allowedRoles" value={routeForm.allowedRoles} placeholder="orders" onChange={(event) => setRouteForm({ ...routeForm, allowedRoles: event.target.value })} />
+            <p className="muted">This client's key always works. Your other clients can call this route if they have one of these roles.</p>
             <div className="checks">
               <label><input type="checkbox" checked={routeForm.authRequired} onChange={(event) => setRouteForm({ ...routeForm, authRequired: event.target.checked })} /> Auth required</label>
               <label><input type="checkbox" checked={routeForm.stripPrefix} onChange={(event) => setRouteForm({ ...routeForm, stripPrefix: event.target.checked })} /> Strip prefix</label>
@@ -342,7 +351,7 @@ export default function App() {
                 <div key={route.id} className="item">
                   <button type="button" className="item-main" onClick={() => editRoute(route)}>
                     <strong>{route.publicPath} → {route.targetUrl}</strong><br />
-                    <small>{route.methods.join(", ")}{route.authRequired ? " · API key" : " · public"}{route.stripPrefix ? " · strip prefix" : ""}{route.requireUserJwt ? " · user JWT" : ""}</small>
+                    <small>{route.methods.join(", ")}{route.authRequired ? " · API key" : " · public"}{route.stripPrefix ? " · strip prefix" : ""}{route.requireUserJwt ? " · user JWT" : ""}{route.allowedRoles?.length ? ` · roles: ${route.allowedRoles.join(", ")}` : ""}</small>
                   </button>
                   <button type="button" className="text-danger" onClick={() => removeRoute(route)}>Delete</button>
                 </div>
@@ -363,7 +372,7 @@ export default function App() {
             </div>
             <div>
               <label htmlFor="tryPath">Gateway path</label>
-              <input id="tryPath" value={call.path} placeholder="/try/order" onChange={(event) => setCall({ ...call, path: event.target.value })} />
+              <input id="tryPath" value={call.path} placeholder="/shop/order" onChange={(event) => setCall({ ...call, path: event.target.value })} />
             </div>
           </div>
           <div className="row">
@@ -419,12 +428,17 @@ export default function App() {
   );
 }
 
+function splitList(value) {
+  return (value || "").split(",").map((item) => item.trim()).filter(Boolean);
+}
+
 function emptyRoute() {
   return {
     name: "",
     publicPath: "",
     targetUrl: "",
     methods: "GET,POST",
+    allowedRoles: "",
     rateLimit: "60",
     authRequired: true,
     stripPrefix: true,

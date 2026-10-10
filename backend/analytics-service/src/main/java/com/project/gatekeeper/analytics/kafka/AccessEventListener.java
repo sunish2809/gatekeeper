@@ -5,6 +5,7 @@ import com.project.gatekeeper.analytics.repo.AccessEventRepository;
 import com.project.gatekeeper.analytics.support.FlatJson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
@@ -27,6 +28,9 @@ public class AccessEventListener {
     public void onEvent(String payload) {
         try {
             Map<String, String> values = FlatJson.read(payload);
+            if (values.get("correlationId") != null) {
+                MDC.put("correlationId", values.get("correlationId"));
+            }
             AccessEventDocument document = new AccessEventDocument();
             document.setId(values.get("eventId"));
             document.setCorrelationId(values.get("correlationId"));
@@ -43,6 +47,8 @@ public class AccessEventListener {
             log.debug("Duplicate access event ignored");
         } catch (RuntimeException ex) {
             log.warn("Access event was not stored: {}", ex.getMessage());
+        } finally {
+            MDC.remove("correlationId");
         }
     }
 

@@ -1,25 +1,34 @@
 package com.project.gatekeeper.gateway.snapshot;
 
+import com.project.gatekeeper.gateway.snapshot.GatewayModels.Caller;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.Match;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.RouteRule;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 
 @Component
 public class SnapshotStore {
 
-    private volatile List<RouteRule> routes = List.of();
+    private record State(List<RouteRule> routes, Map<String, Caller> callers) {
+    }
 
-    public void replace(List<RouteRule> routes) {
-        this.routes = List.copyOf(routes);
+    private volatile State state = new State(List.of(), Map.of());
+
+    public void replace(List<RouteRule> routes, Map<String, Caller> callers) {
+        this.state = new State(List.copyOf(routes), Map.copyOf(callers));
     }
 
     public int size() {
-        return routes.size();
+        return state.routes().size();
     }
 
     public Match match(String method, String path) {
-        return RouteMatcher.match(routes, method, path);
+        return RouteMatcher.match(state.routes(), method, path);
+    }
+
+    public Caller caller(String apiKey) {
+        return apiKey == null ? null : state.callers().get(apiKey);
     }
 }

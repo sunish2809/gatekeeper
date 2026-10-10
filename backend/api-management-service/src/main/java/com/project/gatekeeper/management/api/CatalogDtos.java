@@ -75,7 +75,8 @@ public final class CatalogDtos {
             String apiKey,
             boolean active,
             List<String> roles,
-            List<RouteSnapshot> routes
+            List<RouteSnapshot> routes,
+            String adminId
     ) {
     }
 

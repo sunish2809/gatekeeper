@@ -6,6 +6,7 @@ import com.project.gatekeeper.gateway.proxy.BackendForwarder.UpstreamResponse;
 import com.project.gatekeeper.gateway.proxy.IdempotencyService.Result;
 import com.project.gatekeeper.gateway.proxy.RateLimitService.Decision;
 import com.project.gatekeeper.gateway.proxy.RateLimitService.RateLimiterUnavailableException;
+import com.project.gatekeeper.gateway.snapshot.GatewayModels.Caller;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.Match;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.RouteRule;
 import com.project.gatekeeper.gateway.snapshot.SnapshotStore;
@@ -190,17 +191,22 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
         }
     }
 
+    // The owning client's key always passes. Another client's key passes only when it belongs to the
+    // same admin and holds one of the route's allowed roles; keys from other admins are treated as unknown.
     private Auth authorize(HttpServletRequest request, RouteRule route) {
         String presented = request.getHeader(API_KEY);
-        if (presented == null || !MessageDigest.isEqual(
-                presented.getBytes(StandardCharsets.UTF_8),
-                route.apiKey().getBytes(StandardCharsets.UTF_8))) {
+        if (presented == null) {
             return Auth.UNAUTHORIZED;
         }
-        if (route.allowedRoles().isEmpty()) {
+        if (MessageDigest.isEqual(presented.getBytes(StandardCharsets.UTF_8),
+                route.apiKey().getBytes(StandardCharsets.UTF_8))) {
             return Auth.OK;
         }
-        for (String role : route.clientRoles()) {
+        Caller caller = store.caller(presented);
+        if (caller == null || route.adminId() == null || !route.adminId().equals(caller.adminId())) {
+            return Auth.UNAUTHORIZED;
+        }
+        for (String role : caller.roles()) {
             if (route.allowedRoles().contains(role)) {
                 return Auth.OK;
             }

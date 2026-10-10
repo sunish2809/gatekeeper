@@ -130,7 +130,8 @@ public class CatalogService {
                         routes.findByClientId(client.getId()).stream()
                                 .filter(RouteEntity::isEnabled)
                                 .map(this::toSnapshotRoute)
-                                .toList()))
+                                .toList(),
+                        client.getAdminId()))
                 .toList();
         return new SnapshotResponse(body);
     }

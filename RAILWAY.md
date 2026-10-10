@@ -1,54 +1,166 @@
-# Deploying Gatekeeper on Railway
+# Deploying Gatekeeper on Railway (Hobby plan)
 
-Gatekeeper runs as three Spring Boot services plus a React frontend. Each service has a `Dockerfile` and `railway.toml` in its directory. Create one Railway service per directory and set that directory as its **Root Directory**:
+One Railway project, eight services, all from this GitHub repo or Railway templates. Service-to-service traffic uses Railway private networking; only the frontend, management, and gateway get public domains.
 
-| Railway service | Root Directory | Railway Config File | Public URL |
-| --- | --- | --- | --- |
-| API management | `/backend/api-management-service` | `/backend/api-management-service/railway.toml` | Yes; browser console API |
-| Smart gateway | `/backend/smart-gateway-service` | `/backend/smart-gateway-service/railway.toml` | Yes; caller traffic |
-| Analytics | `/backend/analytics-service` | `/backend/analytics-service/railway.toml` | No; management reads it |
-| Frontend | `/frontend` | `/frontend/railway.toml` | Yes; browser console |
+| Railway service name | Source | Root Directory | Config File | Public domain |
+| --- | --- | --- | --- | --- |
+| `MySQL` | Railway MySQL template | | | No |
+| `Redis` | Railway Redis template | | | No |
+| `MongoDB` | Railway MongoDB template | | | No |
+| `kafka` | This repo | `/deploy/kafka` | `/deploy/kafka/railway.toml` | No |
+| `management` | This repo | `/backend/api-management-service` | `/backend/api-management-service/railway.toml` | Yes, port 8081 |
+| `analytics` | This repo | `/backend/analytics-service` | `/backend/analytics-service/railway.toml` | No |
+| `gateway` | This repo | `/backend/smart-gateway-service` | `/backend/smart-gateway-service/railway.toml` | Yes, port 8080 |
+| `frontend` | This repo | `/frontend` | `/frontend/railway.toml` | Yes |
 
-For each GitHub-backed service, select this repository as the source, set its **Root Directory**, and explicitly set its **Railway Config File** to the absolute repository path shown above. In a monorepo, Railway's config-file path does not automatically follow the root directory. The Java containers activate the `railway` Spring profile, which requires production connection values and secrets rather than silently falling back to local development credentials. They listen on Railway's `PORT` (with their existing local ports as defaults); their `/health` endpoints are used for deployment health checks. The frontend container serves the Vite build through Nginx on `PORT` and checks `/health`.
+Use these service names exactly. The variable blocks below reference them (`${{management.RAILWAY_PRIVATE_DOMAIN}}` and so on). If you rename a service, change the references too.
 
-## Provisioning and deployment order
+In a monorepo, Railway does not find `railway.toml` from the Root Directory on its own. Set **Settings → Config-as-code → Railway Config File** to the path in the table for every repo-backed service.
 
-The app requires MySQL, Redis, Kafka, and MongoDB. Provision compatible services on Railway or use externally hosted instances, then add the four application services. These dependencies must be available before their clients finish starting:
+Targets you register on the deployed gateway must be reachable from Railway, so use a public `https://` URL, not `localhost`.
 
-1. Provision MySQL, Redis, Kafka, and MongoDB, and copy their connection details into Railway variables.
-2. Deploy **API management**, **analytics**, and **smart gateway**. Deploying management first gives the gateway a service to contact; the gateway retries its initial snapshot load if management is not ready yet.
-3. Generate strong, unique values for `GATEKEEPER_ADMIN_KEY` and `GATEKEEPER_JWT_SECRET`. Use the same values for all three Java services. Set them as Railway secrets, never commit real values.
-4. Enable public domains for API management and smart gateway. Set `GATEKEEPER_GATEWAY_URL` on API management to the gateway's public `https://` URL, and set `GATEKEEPER_MANAGEMENT_URL` on the gateway to API management's private Railway URL, for example `http://<management-private-domain>:<management-port>`. Set `GATEKEEPER_ANALYTICS_URL` on API management to analytics' private Railway URL.
-5. Deploy the frontend. Set its Railway variable **`VITE_API_BASE` before building** to the public API management URL, such as `https://<management-domain>`. Vite embeds this value into the static bundle at build time, so changing only a runtime variable requires a rebuild/redeploy. Set `GATEKEEPER_FRONTEND_ORIGIN` on API management to the frontend's public origin, with no trailing slash (for example `https://<frontend-domain>`).
+## 1. Push the code
 
-Use Railway private DNS for service-to-service traffic where indicated; do not use `localhost` between Railway services. `GATEKEEPER_GATEWAY_URL` intentionally uses the public gateway URL because management's console status endpoint probes that configured address. The frontend must use the public management URL because it runs in the visitor's browser.
+Railway builds from GitHub. Commit and push this repo first. Never commit real secrets; all secrets go into Railway variables.
 
-## Variables
+## 2. Create the project and data services
 
-Set variables only on the services that use them. Railway service references can be used for the database/broker connection values if the provider exposes compatible values.
+1. Railway → **New Project → Empty project**.
+2. **Create → Database → MySQL**, then **Redis**, then **MongoDB**. Keep their default names `MySQL`, `Redis`, and `MongoDB`.
+3. **Create → GitHub Repo → this repo**. Rename the service `kafka`, set Root Directory `/deploy/kafka` and Config File `/deploy/kafka/railway.toml`. Then **right-click the service → Attach volume**, mount path `/var/lib/kafka/data`. Do not add a public domain.
 
-| Variable | Service(s) | Value |
-| --- | --- | --- |
-| `MYSQLHOST`, `MYSQLPORT`, `MYSQLDATABASE`, `MYSQLUSER`, `MYSQLPASSWORD` | API management | MySQL host, port, database, username, and password |
-| `REDIS_URL` | Smart gateway | Complete Redis connection URL, including username/password when required |
-| `MONGODB_URI` | Analytics | Complete MongoDB connection URI, including database and credentials |
-| `KAFKA_BOOTSTRAP_SERVERS` | All Java services | Broker `host:port` list |
-| `KAFKA_SECURITY_PROTOCOL` | All Java services | `PLAINTEXT`, `SSL`, `SASL_SSL`, or `SASL_PLAINTEXT`, as required by the broker |
-| `KAFKA_SASL_MECHANISM`, `KAFKA_SASL_JAAS_CONFIG` | All Java services | Set when the broker requires SASL; put broker credentials in the JAAS value as Railway secrets |
-| `GATEKEEPER_ADMIN_KEY` | All Java services | One shared, randomly generated service/admin key |
-| `GATEKEEPER_JWT_SECRET` | API management and smart gateway | One shared, randomly generated signing secret of at least 32 characters |
-| `GATEKEEPER_MANAGEMENT_URL` | Smart gateway | Management private URL, including the service port |
-| `GATEKEEPER_GATEWAY_URL` | API management | Gateway public HTTPS URL |
-| `GATEKEEPER_ANALYTICS_URL` | API management | Analytics private URL, including the service port |
-| `GATEKEEPER_FRONTEND_ORIGIN` | API management | Exact frontend public origin, no trailing slash |
-| `VITE_API_BASE` | Frontend | API management public HTTPS URL; set before frontend build |
+The Kafka image is a single KRaft broker with a 256 MB heap. It advertises `${RAILWAY_PRIVATE_DOMAIN}:9092` on its own, so it needs no variables.
 
-The environment variable names for managed database products differ by provider. Map them to the names above rather than putting credentials in source code. Keep analytics private unless there is a separate reason to expose it; its health endpoint is unauthenticated, but its API is protected by the shared admin key.
+## 3. Shared secrets
 
-## Hobby plan and resource usage
+**Project Settings → Shared Variables**, add:
 
-The eight application components (three Java services, frontend, MySQL, Redis, Kafka, and MongoDB) are below Hobby's current 50-service project limit. Railway's [pricing page](https://railway.com/pricing) lists Hobby at $5/month with $5 of included monthly usage, up to 48 vCPU/48 GB per service, six replicas, and volumes up to 5 GB. The included usage is a credit, **not** a guarantee that this always-on topology costs only $5: CPU, memory, volumes, and egress are usage-billed, and usage beyond the included amount is charged. Kafka and multiple databases may make the total exceed the credit, depending on sizing and uptime. Confirm current limits and estimated usage in Railway before deploying, and monitor billing during the first month.
+| Name | Value |
+| --- | --- |
+| `GATEKEEPER_ADMIN_KEY` | output of `openssl rand -hex 32` |
+| `GATEKEEPER_JWT_SECRET` | output of `openssl rand -hex 48` (must be at least 32 characters) |
 
-This setup preserves the existing architecture; it does not consolidate or remove services to lower resource usage. If you need the monthly total to stay at the Hobby subscription price, measure a real deployment and reduce resource usage or use compatible external services as needed; do not assume all eight always-on services fit within the included usage.
+`GATEKEEPER_ADMIN_KEY` is the service key between management, gateway, and analytics. `GATEKEEPER_JWT_SECRET` signs console logins and verifies user JWTs on routes with "Require user JWT". Changing the JWT secret logs everyone out.
 
-Local development remains unchanged: the application properties still default to the Compose ports, frontend `.env` still points at local management, and `docker-compose.yml` continues to provide local MySQL, Redis, Kafka, and MongoDB.
+## 4. Application services
+
+Create each of the four app services from the repo (**Create → GitHub Repo**), rename it, set Root Directory and Config File from the table, then paste its variables in **Variables → Raw Editor**.
+
+`PORT` is set explicitly so the private URLs below have a known port.
+
+### management
+
+```env
+PORT=8081
+MYSQLHOST=${{MySQL.MYSQLHOST}}
+MYSQLPORT=${{MySQL.MYSQLPORT}}
+MYSQLDATABASE=${{MySQL.MYSQLDATABASE}}
+MYSQLUSER=${{MySQL.MYSQLUSER}}
+MYSQLPASSWORD=${{MySQL.MYSQLPASSWORD}}
+KAFKA_BOOTSTRAP_SERVERS=${{kafka.RAILWAY_PRIVATE_DOMAIN}}:9092
+GATEKEEPER_ADMIN_KEY=${{shared.GATEKEEPER_ADMIN_KEY}}
+GATEKEEPER_JWT_SECRET=${{shared.GATEKEEPER_JWT_SECRET}}
+GATEKEEPER_GATEWAY_URL=https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}
+GATEKEEPER_ANALYTICS_URL=http://${{analytics.RAILWAY_PRIVATE_DOMAIN}}:8082
+GATEKEEPER_FRONTEND_ORIGIN=https://${{frontend.RAILWAY_PUBLIC_DOMAIN}}
+```
+
+### analytics
+
+```env
+PORT=8082
+MONGODB_URI=${{MongoDB.MONGO_URL}}/gatekeeper?authSource=admin
+KAFKA_BOOTSTRAP_SERVERS=${{kafka.RAILWAY_PRIVATE_DOMAIN}}:9092
+GATEKEEPER_ADMIN_KEY=${{shared.GATEKEEPER_ADMIN_KEY}}
+```
+
+Railway's `MONGO_URL` has no database name, so `/gatekeeper?authSource=admin` is appended.
+
+### gateway
+
+```env
+PORT=8080
+REDIS_URL=${{Redis.REDIS_URL}}
+KAFKA_BOOTSTRAP_SERVERS=${{kafka.RAILWAY_PRIVATE_DOMAIN}}:9092
+GATEKEEPER_MANAGEMENT_URL=http://${{management.RAILWAY_PRIVATE_DOMAIN}}:8081
+GATEKEEPER_ADMIN_KEY=${{shared.GATEKEEPER_ADMIN_KEY}}
+GATEKEEPER_JWT_SECRET=${{shared.GATEKEEPER_JWT_SECRET}}
+```
+
+### frontend
+
+```env
+VITE_API_BASE=https://${{management.RAILWAY_PUBLIC_DOMAIN}}
+```
+
+Vite bakes `VITE_API_BASE` into the JavaScript at build time. The Docker build fails if it is empty. If the management domain changes, redeploy the frontend.
+
+## 5. Public domains
+
+**Settings → Networking → Generate Domain** on:
+
+- `management`, target port `8081`
+- `gateway`, target port `8080`
+- `frontend`, use the port Railway suggests (nginx listens on Railway's `PORT`)
+
+Generate domains before the first successful frontend build, because `VITE_API_BASE` and `GATEKEEPER_FRONTEND_ORIGIN` reference them. If a build ran earlier with an empty domain, redeploy `frontend` and `management` once the domains exist.
+
+## 6. Deploy order
+
+Railway deploys everything at once. That is fine:
+
+- Java services fail fast and are restarted (`ON_FAILURE`, 10 retries) if MySQL, Mongo, or Kafka are not ready yet.
+- The gateway starts with zero routes if management is not up, then pulls the snapshot every 30 seconds.
+- Health checks hit `/health` on each Java service and on the frontend, with a 300 second timeout.
+
+Each `railway.toml` also sets `watchPatterns`, so a push only redeploys the services whose folder changed.
+
+## 7. Smoke test
+
+Replace the domains with your own.
+
+```bash
+curl https://<management-domain>/health
+curl https://<gateway-domain>/health
+curl https://<gateway-domain>/health/routes
+```
+
+Then open `https://<frontend-domain>`, register an account, create a client, add a route whose target is a public URL (for example public path `/bin`, target `https://httpbin.org`, strip prefix on), and call it:
+
+```bash
+curl https://<gateway-domain>/bin/get -H 'X-Api-Key: <client api key>'
+```
+
+The dashboard should show the call within a few seconds. If it does not, check `analytics` logs for Kafka or Mongo errors.
+
+## Hobby plan cost
+
+Hobby is $5/month and includes $5 of usage. Usage beyond that is billed for RAM, CPU, volumes, and egress. Eight always-on services will use more than the included $5. A rough idle footprint:
+
+| Service | Approx. RAM |
+| --- | --- |
+| 3 Java services (heap capped at 320 MB each) | 1.2 to 1.5 GB |
+| Kafka (256 MB heap) | ~400 MB |
+| MySQL | ~350 MB |
+| MongoDB | ~200 MB |
+| Redis, nginx | < 50 MB |
+
+That is about 2.5 GB, which at Railway's per-GB memory pricing is well above the $5 credit. Check the live estimate in **Project → Usage** after the first day and set a **usage limit** in workspace billing settings so a mistake cannot run up a bill.
+
+Ways to cut cost without code changes:
+
+- Use MongoDB Atlas free tier (M0) and put its URI in `MONGODB_URI`; delete the Railway `MongoDB` service.
+- Use a free hosted Redis (for example Upstash) via `REDIS_URL`; Upstash requires `rediss://`.
+- Remove the project between demos; MySQL data is lost unless you back it up.
+
+The JVM heap can be changed per service by overriding `JAVA_TOOL_OPTIONS` in that service's variables. Do not go much below `-Xmx256m`.
+
+## Production notes
+
+- Hibernate `ddl-auto=update` creates and alters MySQL tables on startup. There are no migration scripts, so review entity changes before deploying.
+- Kafka is a single broker. Losing its volume loses unconsumed access events only; route config is reloaded from MySQL.
+- Analytics dashboards read the latest 500 events per client.
+- Client API keys are stored in plain text in MySQL.
+- TLS is terminated by Railway on the public domains. Private traffic between services is plain HTTP inside Railway's network.
+
+Local development is unchanged: `docker compose up -d` plus `./mvnw spring-boot:run` uses the defaults in `application.properties`, and `frontend/.env` points at local management.

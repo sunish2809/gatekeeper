@@ -10,5 +10,6 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 COPY --from=build /workspace/target/*.jar /app/app.jar
 ENV SPRING_PROFILES_ACTIVE=railway
+ENV JAVA_TOOL_OPTIONS="-Xmx320m -Xss512k -XX:+UseSerialGC -XX:MaxMetaspaceSize=160m"
 EXPOSE 8082
 CMD ["java", "-jar", "/app/app.jar"]

@@ -5,6 +5,7 @@ RUN npm ci
 COPY . .
 ARG VITE_API_BASE
 ENV VITE_API_BASE=${VITE_API_BASE}
+RUN test -n "$VITE_API_BASE" || (echo "VITE_API_BASE must be set to the public api-management URL" && exit 1)
 RUN npm run build
 
 FROM nginx:1.27-alpine

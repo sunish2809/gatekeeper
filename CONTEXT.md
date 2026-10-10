@@ -19,7 +19,7 @@ The React control plane lives in `frontend` and runs at http://localhost:5174. I
 1. Client calls the gateway (`http://localhost:8080/...`), not the backend.
 2. Correlation filter sets `X-Correlation-Id` (reuses the incoming header when present).
 3. Gateway matches the longest public path in its in-memory snapshot.
-4. If the route requires auth, `X-Api-Key` must be that client's key. If the route has `allowedRoles`, the client must have one of those roles.
+4. If the route requires auth, `X-Api-Key` decides who may call it. The owning client's key always passes. Another client's key passes only if that client belongs to the same admin and has one of the route's `allowedRoles`. Keys from other admins are treated as unknown (401).
 5. Redis fixed-window rate limit, unless `rateLimit` is `0` (unlimited).
 6. For `idempotentPost` routes, POST must send `Idempotency-Key`. A completed response is replayed from Redis for 24 hours. A key that is still running returns 409.
 7. Gateway strips the public prefix when `stripPrefix` is true, adds the route's request headers, and forwards with the route timeout.
@@ -58,16 +58,13 @@ API keys are stored in plain text so a local user can read them back. Do not use
 gatekeeper/
   backend/              smart gateway, API management, analytics
   frontend/             React control plane, port 5174
-  demo-shop/            throwaway target app for local testing, port 9000
+  deploy/kafka/         single-node Kafka image for Railway
   docker-compose.yml    MySQL, Redis, Kafka, MongoDB
   CONTEXT.md
+  RAILWAY.md            Railway deployment guide
 ```
 
-`demo-shop` is only a stand-in target so the gateway can be exercised. It uses the same MySQL server on port 3307 and its own schema `demo_shop`. Start it with `cd demo-shop && ./mvnw spring-boot:run` (port 9000). Its APIs are `GET /order`, `POST /order`, and `GET /news`.
-
-Nothing is pre-registered for this shop. An admin creates the client and the route in the console. A route with public path `/try`, target `http://localhost:9000`, strip prefix on, then serves `http://localhost:8080/try/order` and `http://localhost:8080/try/news`.
-
-Delete the shop after testing with `demo-shop/remove-demo.sh` (drops schema `demo_shop` only), then delete the `demo-shop` folder and any client created for it. A real caller's application stays outside this repo.
+The caller's backend (the target) always stays outside this repo. To try the gateway without one, point a route at a public echo service: public path `/bin`, target `https://httpbin.org`, strip prefix on, then `http://localhost:8080/bin/get` returns httpbin's `/get`.
 
 ## Run
 
@@ -82,11 +79,19 @@ cd backend/analytics-service && ./mvnw spring-boot:run
 cd frontend && npm install && npm run dev
 ```
 
-Open http://localhost:5174. Admin key `dev-admin-key`. Create a client, save a route whose target URL is their backend, then send a call. The gateway on port 8080 applies the policy and either forwards or returns 429. Refresh shows the analytics event.
+Open http://localhost:5174, register or log in, create a client, save a route whose target URL is their backend, then send a call. The gateway on port 8080 applies the policy and either forwards or returns 429. The dashboard shows the analytics events.
 
-For a deploy, build the React app with `VITE_API_BASE` set to the management URL, and set `gatekeeper.frontend-origin` to that browser origin.
+## Deploy (Railway Hobby)
 
-See [RAILWAY.md](RAILWAY.md) for Railway Dockerfiles, service setup, environment variables, networking, and the free-tier resource caveat.
+[RAILWAY.md](RAILWAY.md) is the step-by-step guide. The deployment-relevant facts:
+
+- Eight Railway services: management, gateway, analytics, frontend, Kafka (`deploy/kafka`), plus Railway's MySQL, Redis, and MongoDB templates.
+- Each Java image sets `SPRING_PROFILES_ACTIVE=railway`. `application-railway.properties` has no defaults, so a missing variable fails startup instead of falling back to localhost.
+- Java images cap the heap with `JAVA_TOOL_OPTIONS` (`-Xmx320m`, serial GC) to keep Hobby usage low. Kafka runs with a 256 MB heap.
+- `railway.toml` files do not set `startCommand`, so the Dockerfile `CMD` and the nginx entrypoint (which renders `$PORT` into the config) run unchanged.
+- The frontend bakes `VITE_API_BASE` in at build time. The Docker build fails if it is empty.
+- MongoDB uses `spring.mongodb.uri` (Spring Boot 4 name). The old `spring.data.mongodb.uri` is ignored by Boot 4.
+- Schema is created by Hibernate `ddl-auto=update`. There are no migration scripts.
 
 ## Interview flow
 
@@ -106,13 +111,17 @@ The person who configures the gateway registers and logs in on the React app. Ma
 Register a backend, then call the gateway:
 
 ```bash
+TOKEN=$(curl -s -X POST http://localhost:8081/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"you@example.com","password":"your-password"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+
 curl -s -X POST http://localhost:8081/api/clients \
-  -H 'Content-Type: application/json' -H 'X-Admin-Key: dev-admin-key' \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"name":"shop","apiKey":"gk_shop","roles":["orders"]}'
 
 # use the returned client id
 curl -s -X POST http://localhost:8081/api/clients/CLIENT_ID/routes \
-  -H 'Content-Type: application/json' -H 'X-Admin-Key: dev-admin-key' \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{
     "name": "shop",
     "publicPath": "/shop",
@@ -136,7 +145,7 @@ curl -s http://localhost:8082/api/summary -H 'X-Admin-Key: dev-admin-key'
 
 ## Management API
 
-All `/api/**` and `/internal/**` routes need `X-Admin-Key`.
+`/api/auth/register` and `/api/auth/login` are open and return a JWT. Other `/api/**` routes need `Authorization: Bearer <token>` and only see the caller's own clients. `/internal/**` needs the service key `X-Admin-Key`.
 
 - `POST /api/clients` body: `name`, optional `apiKey`, optional `roles`
 - `GET /api/clients` and `GET /api/clients/{id}`
@@ -147,15 +156,21 @@ All `/api/**` and `/internal/**` routes need `X-Admin-Key`.
 - `DELETE /api/clients/{clientId}/routes/{routeId}`
 - `GET /internal/snapshot` for the gateway
 - `GET /api/audit` last 50 admin writes
+- `GET /api/console/overview?clientId=` dashboard data, proxied from analytics after an ownership check
 
 Route defaults: timeout 5000 ms, auth required, 60 requests per 60 seconds, prefix stripped, idempotent POST off, route enabled. `rateLimit: 0` disables the limit. `publicPath` is unique across all clients. `targetUrl` must be `http` or `https`.
 
 Write calls are audited with an AspectJ `@Audited` advice after the controller method returns. The audit row is stored in MySQL table `admin_audit`. A failed audit does not undo the change.
 
+Request pipeline in management: servlet filters (`AdminKeyFilter` for auth, `CorrelationFilter` for `X-Correlation-Id` and the log MDC), then the Spring MVC `RequestTimingInterceptor`, which logs method, path, status, duration, and handler for `/api/**` and `/internal/**`. `ApiExceptionHandler` (`@RestControllerAdvice`) turns every error into `{"error","message"}` JSON: 400 for bad input, 409 for duplicates, Spring's own status for framework errors, 500 for anything unexpected (logged with the correlation id). Analytics has the same kind of handler. The gateway has no controllers on the proxy path, so `GatewayProxyFilter` catches errors itself and returns JSON with `correlationId`.
+
+Correlation id path: browser or caller → management (console Send forwards it) → gateway → target backend, then gateway → Kafka event → analytics (the listener puts it in the log MDC) → MongoDB `correlationId`.
+
 ## Gateway behavior worth remembering
 
 - No route: 404. Path matches but method does not: 405.
-- Missing or wrong API key: 401. Right key, missing role: 403.
+- Missing, unknown, or other-admin API key: 401. Same-admin client without an allowed role: 403.
+- Example: admin owns client `shop` (routes `/shop/**`, allowed roles `orders`), client `mobile-app` (role `orders`), and client `partner` (role `news`). `shop` and `mobile-app` keys can call `/shop/order`; `partner` gets 403.
 - Redis down while a limit or idempotency check is required: 503.
 - Backend timeout: 504. Backend unreachable: 502.
 - Request and response bodies are buffered so idempotency can store them. Stored POST bodies are capped at 256 KB; larger ones are not replayed.
@@ -177,7 +192,8 @@ Event JSON fields: `eventId`, `correlationId`, `clientId`, `routeId`, `method`, 
 ## What is intentionally simple
 
 - No shared Maven module. Contracts are duplicated records and the JSON fields above.
-- No OAuth2 login yet. The resource-server starter is on the classpath, but route auth is the client API key plus roles. That is what makes a new backend usable without an identity provider.
+- No OAuth2 login yet. Route auth is the client API key plus roles, with an optional HS256 user JWT. That is what makes a new backend usable without an identity provider.
+- Access events are attributed to the route owner's client, so the owner's dashboard shows calls made by other clients' keys too.
 - API keys are stored in plain text, the gateway cache is per process, and the proxy buffers the body.
 - Unit tests cover path matching, target URLs, header encoding, and the flat JSON events. They do not boot MySQL, Redis, Kafka, or Mongo.
 
