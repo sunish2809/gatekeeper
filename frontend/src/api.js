@@ -35,3 +35,11 @@ export function createApi(token) {
 export function publicApi(path, body) {
   return createApi(null)(path, { method: "POST", body: JSON.stringify(body) });
 }
+
+export function publicGet(path) {
+  return createApi(null)(path);
+}
+
+export function oidcLoginUrl(provider) {
+  return `${API}/oauth2/authorization/${provider}`;
+}

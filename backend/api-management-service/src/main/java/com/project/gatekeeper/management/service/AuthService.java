@@ -47,7 +47,22 @@ public class AuthService {
         return result(admin);
     }
 
-    private AuthResult result(AdminEntity admin) {
+    @Transactional
+    public AuthResult loginOrRegisterOidc(String name, String email) {
+        String normalized = email.trim().toLowerCase();
+        AdminEntity admin = admins.findByEmailIgnoreCase(normalized).orElseGet(() -> {
+            AdminEntity created = new AdminEntity();
+            created.setId(UUID.randomUUID().toString());
+            created.setName(name == null || name.isBlank() ? normalized : name.trim());
+            created.setEmail(normalized);
+            // OIDC accounts do not use this value. Keep a non-null random hash so password login cannot be guessed.
+            created.setPasswordHash(passwords.encode(UUID.randomUUID().toString()));
+            return admins.save(created);
+        });
+        return result(admin);
+    }
+
+    public AuthResult result(AdminEntity admin) {
         return new AuthResult(jwt.issue(admin), new AdminView(admin.getId(), admin.getName(), admin.getEmail()));
     }
 

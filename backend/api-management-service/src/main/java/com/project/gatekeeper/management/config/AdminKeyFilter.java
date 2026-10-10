@@ -43,7 +43,10 @@ public class AdminKeyFilter extends OncePerRequestFilter {
                 || path.equals("/favicon.ico")
                 || path.equals("/health")
                 || path.startsWith("/health/")
-                || path.startsWith("/api/auth/");
+                || path.startsWith("/api/auth/")
+                || path.startsWith("/oauth2/")
+                || path.startsWith("/login/oauth2/")
+                || path.equals("/error");
     }
 
     @Override

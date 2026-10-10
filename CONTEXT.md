@@ -106,7 +106,7 @@ Two sides sit outside Gatekeeper. The **client** is the caller's app. The **targ
 7. Analytics consumes that topic and stores the event in MongoDB, so each client can be queried differently without a fixed SQL schema.
 8. If the admin later changes a route in the React app, management commits MySQL and publishes `gateway.config.changed`. The smart gateway consumes that event and reloads the snapshot into memory. A missed message is healed by the 30 second poll.
 
-The person who configures the gateway registers and logs in on the React app. Management issues a JWT, and the browser sends it as `Authorization: Bearer`. Each account only sees the clients it created. Callers of the gateway still send `X-Api-Key`. The gateway's own pull of `/internal/snapshot` still uses the service key `X-Admin-Key`, which is not a user password. The gateway checks the client API key. A route can also require an end-user JWT in `Authorization: Bearer`, signed with the same HMAC secret. That check is off until the admin turns on Require user JWT.
+The person who configures the gateway can register with email/password or use Google OIDC. Google uses the server-side authorization-code flow: management verifies Google's ID token, creates or links an admin by verified email, and redirects the browser with a two-minute, single-use code. The frontend exchanges that code for the same Gatekeeper JWT used by email/password login, then removes the code from the URL. Google secrets never reach the browser. Each account only sees the clients it created. Callers of the gateway still send `X-Api-Key`. The gateway's own pull of `/internal/snapshot` still uses the service key `X-Admin-Key`, which is not a user password. A route can separately require an end-user JWT in `Authorization: Bearer`, signed with the Gatekeeper HMAC secret. Admin Google OIDC and route user-JWT validation are separate features.
 
 Register a backend, then call the gateway:
 
@@ -145,7 +145,7 @@ curl -s http://localhost:8082/api/summary -H 'X-Admin-Key: dev-admin-key'
 
 ## Management API
 
-`/api/auth/register` and `/api/auth/login` are open and return a JWT. Other `/api/**` routes need `Authorization: Bearer <token>` and only see the caller's own clients. `/internal/**` needs the service key `X-Admin-Key`.
+`/api/auth/register`, `/api/auth/login`, `/api/auth/options`, and the single-use `/api/auth/oidc/exchange` are open. Google login starts at `/oauth2/authorization/google` and returns through `/login/oauth2/code/google`. Other `/api/**` routes need `Authorization: Bearer <token>` and only see the caller's own clients. `/internal/**` needs the service key `X-Admin-Key`.
 
 - `POST /api/clients` body: `name`, optional `apiKey`, optional `roles`
 - `GET /api/clients` and `GET /api/clients/{id}`
@@ -192,7 +192,8 @@ Event JSON fields: `eventId`, `correlationId`, `clientId`, `routeId`, `method`, 
 ## What is intentionally simple
 
 - No shared Maven module. Contracts are duplicated records and the JSON fields above.
-- No OAuth2 login yet. Route auth is the client API key plus roles, with an optional HS256 user JWT. That is what makes a new backend usable without an identity provider.
+- Admin login supports password credentials and optional Google OIDC. Route auth remains client API key plus roles, with an optional HS256 user JWT; Google admin login does not automatically make proxied routes Google-protected.
+- OIDC one-time codes are held in management-process memory for two minutes. A multi-replica management deployment should move them to Redis.
 - Access events are attributed to the route owner's client, so the owner's dashboard shows calls made by other clients' keys too.
 - API keys are stored in plain text, the gateway cache is per process, and the proxy buffers the body.
 - Unit tests cover path matching, target URLs, header encoding, and the flat JSON events. They do not boot MySQL, Redis, Kafka, or Mongo.

@@ -63,7 +63,20 @@ GATEKEEPER_JWT_SECRET=${{shared.GATEKEEPER_JWT_SECRET}}
 GATEKEEPER_GATEWAY_URL=https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}
 GATEKEEPER_ANALYTICS_URL=http://${{analytics.RAILWAY_PRIVATE_DOMAIN}}:8082
 GATEKEEPER_FRONTEND_ORIGIN=https://${{frontend.RAILWAY_PUBLIC_DOMAIN}}
+GATEKEEPER_OIDC_ENABLED=true
+GOOGLE_OIDC_CLIENT_ID=<client ID from Google Cloud>
+GOOGLE_OIDC_CLIENT_SECRET=<rotated client secret from Google Cloud>
 ```
+
+The Google client secret is a management-service secret. Do not put it in Shared Variables, the frontend, or source control.
+
+Before enabling OIDC, open **Google Cloud Console → APIs & Services → Credentials**, select the OAuth 2.0 Web application, and add this exact **Authorized redirect URI**:
+
+```text
+https://<management-public-domain>/login/oauth2/code/google
+```
+
+For this deployment, replace `<management-public-domain>` with the domain Railway generated for `management`. Configure the OAuth consent screen and add your Google account as a test user if the app is still in Testing status. A secret pasted into chat, logs, or source control must be revoked and replaced before deployment.
 
 ### analytics
 
