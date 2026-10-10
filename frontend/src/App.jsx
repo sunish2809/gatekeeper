@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createApi } from "./api.js";
 import AuthScreen from "./AuthScreen.jsx";
 import Dashboard from "./Dashboard.jsx";
+import IntegrationGuide from "./IntegrationGuide.jsx";
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("gk.token") || "");
@@ -287,6 +288,8 @@ export default function App() {
           <div><strong>03</strong><span>Enforce policies</span><small>Apply authentication, roles, limits, and idempotency.</small></div>
           <div><strong>04</strong><span>Observe traffic</span><small>Track volume, latency, failures, and throttled calls.</small></div>
         </section>
+
+        <IntegrationGuide />
 
         <div className="grid">
           <section className="card">
