@@ -2,14 +2,14 @@
 
 Gatekeeper runs as three Spring Boot services plus a React frontend. Each service has a `Dockerfile` and `railway.toml` in its directory. Create one Railway service per directory and set that directory as its **Root Directory**:
 
-| Railway service | Root Directory | Public URL |
-| --- | --- | --- |
-| API management | `/backend/api-management-service` | Yes; browser console API |
-| Smart gateway | `/backend/smart-gateway-service` | Yes; caller traffic |
-| Analytics | `/backend/analytics-service` | No; management reads it |
-| Frontend | `/frontend` | Yes; browser console |
+| Railway service | Root Directory | Railway Config File | Public URL |
+| --- | --- | --- | --- |
+| API management | `/backend/api-management-service` | `/backend/api-management-service/railway.toml` | Yes; browser console API |
+| Smart gateway | `/backend/smart-gateway-service` | `/backend/smart-gateway-service/railway.toml` | Yes; caller traffic |
+| Analytics | `/backend/analytics-service` | `/backend/analytics-service/railway.toml` | No; management reads it |
+| Frontend | `/frontend` | `/frontend/railway.toml` | Yes; browser console |
 
-Railway reads each directory's `railway.toml`. The Java containers activate the `railway` Spring profile, which requires production connection values and secrets rather than silently falling back to local development credentials. They listen on Railway's `PORT` (with their existing local ports as defaults); their `/health` endpoints are used for deployment health checks. The frontend container serves the Vite build through Nginx on `PORT` and checks `/health`.
+For each GitHub-backed service, select this repository as the source, set its **Root Directory**, and explicitly set its **Railway Config File** to the absolute repository path shown above. In a monorepo, Railway's config-file path does not automatically follow the root directory. The Java containers activate the `railway` Spring profile, which requires production connection values and secrets rather than silently falling back to local development credentials. They listen on Railway's `PORT` (with their existing local ports as defaults); their `/health` endpoints are used for deployment health checks. The frontend container serves the Vite build through Nginx on `PORT` and checks `/health`.
 
 ## Provisioning and deployment order
 
