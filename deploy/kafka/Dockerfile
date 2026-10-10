@@ -1,6 +1,7 @@
 FROM apache/kafka:3.9.1
 
 # Railway volumes are mounted as root, so the broker must run as root to write its log directory.
+# The volume root holds lost+found, which Kafka rejects, so logs live in a subdirectory.
 USER root
 
 ENV KAFKA_NODE_ID=1 \
@@ -15,7 +16,7 @@ ENV KAFKA_NODE_ID=1 \
     KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0 \
     KAFKA_NUM_PARTITIONS=3 \
     KAFKA_LOG_RETENTION_HOURS=72 \
-    KAFKA_LOG_DIRS=/var/lib/kafka/data \
+    KAFKA_LOG_DIRS=/var/lib/kafka/data/kafka-logs \
     KAFKA_HEAP_OPTS="-Xmx256m -Xms256m"
 
 EXPOSE 9092
