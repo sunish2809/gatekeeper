@@ -27,27 +27,43 @@ export default function AuthScreen({ onSuccess }) {
 
   return (
     <div className="auth-shell">
-      <form className="auth-card" onSubmit={submit}>
-        <p className="eyebrow">Gatekeeper</p>
-        <h1>{mode === "register" ? "Create your account" : "Welcome back"}</h1>
-        <p className="lede">This account owns the clients and target routes you register. Callers of the gateway still use the API key you create afterward.</p>
-        <div className="auth-switch">
-          <button type="button" className={mode === "login" ? "" : "secondary"} onClick={() => setMode("login")}>Log in</button>
-          <button type="button" className={mode === "register" ? "" : "secondary"} onClick={() => setMode("register")}>Register</button>
+      <section className="auth-story">
+        <div className="auth-brand"><span className="brand-mark">G</span><strong>Gatekeeper</strong></div>
+        <div className="auth-copy">
+          <p className="eyebrow">Your API control plane</p>
+          <h1>Ship APIs with confidence.</h1>
+          <p>Route, protect, and understand every request—without coupling gateway logic to your applications.</p>
+          <ul>
+            <li><i />Dynamic routing and policy enforcement</li>
+            <li><i />Per-client authentication and rate limits</li>
+            <li><i />Real-time traffic and latency analytics</li>
+          </ul>
         </div>
-        {error ? <div className="banner">{error}</div> : null}
-        {mode === "register" ? (
-          <>
-            <label htmlFor="name">Name</label>
-            <input id="name" value={name} autoComplete="name" onChange={(event) => setName(event.target.value)} required />
-          </>
-        ) : null}
-        <label htmlFor="email">Email</label>
-        <input id="email" type="email" value={email} autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
-        <label htmlFor="password">Password</label>
-        <input id="password" type="password" value={password} autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={mode === "register" ? 8 : undefined} onChange={(event) => setPassword(event.target.value)} required />
-        <button type="submit" disabled={busy}>{busy ? "Please wait" : mode === "register" ? "Create account" : "Log in"}</button>
-      </form>
+        <p className="auth-foot">Built for teams that want visibility without complexity.</p>
+      </section>
+      <section className="auth-form-wrap">
+        <form className="auth-card" onSubmit={submit}>
+          <p className="eyebrow">{mode === "register" ? "Start building" : "Welcome back"}</p>
+          <h2>{mode === "register" ? "Create your workspace" : "Sign in to Gatekeeper"}</h2>
+          <p className="lede">{mode === "register" ? "Set up your API control plane in a few seconds." : "Manage your clients, routes, and gateway traffic."}</p>
+          <div className="auth-switch">
+            <button type="button" className={mode === "login" ? "" : "secondary"} onClick={() => setMode("login")}>Log in</button>
+            <button type="button" className={mode === "register" ? "" : "secondary"} onClick={() => setMode("register")}>Create account</button>
+          </div>
+          {error ? <div className="banner">{error}</div> : null}
+          {mode === "register" ? (
+            <>
+              <label htmlFor="name">Full name</label>
+              <input id="name" value={name} placeholder="Alex Morgan" autoComplete="name" onChange={(event) => setName(event.target.value)} required />
+            </>
+          ) : null}
+          <label htmlFor="email">Work email</label>
+          <input id="email" type="email" value={email} placeholder="alex@company.com" autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
+          <label htmlFor="password">Password</label>
+          <input id="password" type="password" value={password} placeholder={mode === "register" ? "At least 8 characters" : "Enter your password"} autoComplete={mode === "register" ? "new-password" : "current-password"} minLength={mode === "register" ? 8 : undefined} onChange={(event) => setPassword(event.target.value)} required />
+          <button type="submit" disabled={busy}>{busy ? "Please wait…" : mode === "register" ? "Create workspace" : "Sign in"}</button>
+        </form>
+      </section>
     </div>
   );
 }

@@ -251,11 +251,15 @@ export default function App() {
     <div className="shell">
       <header>
         <div className="brand">
-          <h1>Gatekeeper</h1>
-          <p className="lede">Register a client and the target routes. Callers then send traffic to the smart gateway.</p>
+          <span className="brand-mark" aria-hidden="true">G</span>
+          <div>
+            <span className="brand-kicker">Gatekeeper Cloud</span>
+            <h1>Control plane</h1>
+          </div>
         </div>
         <div className="account">
-          <div>
+          <span className="avatar" aria-hidden="true">{(admin?.name || "A").slice(0, 1).toUpperCase()}</span>
+          <div className="account-copy">
             <strong>{admin?.name || "Account"}</strong>
             <span className="muted">{admin?.email}</span>
           </div>
@@ -264,43 +268,58 @@ export default function App() {
       </header>
       <main>
         {error ? <div className="banner">{error}</div> : null}
-        <div className="legend">
-          <StatusPill name="Management" check={status?.management} />
-          <StatusPill name="Gateway" check={status?.gateway} />
-          <StatusPill name="Analytics" check={status?.analytics} />
-          <span className="pill">{status?.routes == null ? "routes unknown" : `${status.routes} routes in memory`}</span>
-        </div>
+        <section className="workspace-head">
+          <div>
+            <p className="eyebrow">API operations</p>
+            <h2>Gateway overview</h2>
+            <p className="lede">Configure clients, publish routes, and inspect traffic from one secure workspace.</p>
+          </div>
+          <div className="legend">
+            <StatusPill name="Management" check={status?.management} />
+            <StatusPill name="Gateway" check={status?.gateway} />
+            <StatusPill name="Analytics" check={status?.analytics} />
+            <span className="pill neutral">{status?.routes == null ? "Routes unavailable" : `${status.routes} active routes`}</span>
+          </div>
+        </section>
         <section className="steps">
-          <div><strong>1</strong>Create the client. That identity is allowed to call the gateway.</div>
-          <div><strong>2</strong>Save a route: public path, target URL, rate limit, auth, idempotent POST.</div>
-          <div><strong>3</strong>The gateway loads that config into memory and applies it on the live call.</div>
-          <div><strong>4</strong>Analytics stores latency, status, and rate-limit misses for that path.</div>
+          <div><strong>01</strong><span>Register an application</span><small>Create an identity and access key for a calling application.</small></div>
+          <div><strong>02</strong><span>Publish a route</span><small>Map a public gateway path to your existing backend.</small></div>
+          <div><strong>03</strong><span>Enforce policies</span><small>Apply authentication, roles, limits, and idempotency.</small></div>
+          <div><strong>04</strong><span>Observe traffic</span><small>Track volume, latency, failures, and throttled calls.</small></div>
         </section>
 
         <div className="grid">
           <section className="card">
-            <h2>Clients</h2>
+            <div className="card-head">
+              <div>
+                <p className="eyebrow">Applications</p>
+                <h2>API clients</h2>
+                <p className="muted">Issue credentials and roles to applications that call your gateway.</p>
+              </div>
+              <span className="count-badge">{clients.length}</span>
+            </div>
             <div className="row">
               <div>
-                <label htmlFor="clientName">Name</label>
-                <input id="clientName" value={clientName} placeholder="shop" onChange={(event) => setClientName(event.target.value)} />
+                <label htmlFor="clientName">Application name</label>
+                <input id="clientName" value={clientName} placeholder="Acme Commerce — Production" onChange={(event) => setClientName(event.target.value)} />
               </div>
               <div>
-                <label htmlFor="clientKey">API key</label>
-                <input id="clientKey" value={clientKey} placeholder="gk_shop" onChange={(event) => setClientKey(event.target.value)} />
+                <label htmlFor="clientKey">Client API key</label>
+                <input id="clientKey" value={clientKey} placeholder="e.g. acme_prod_key_7f9a2c" onChange={(event) => setClientKey(event.target.value)} />
               </div>
             </div>
             <label htmlFor="clientRoles">Roles</label>
-            <input id="clientRoles" value={clientRoles} placeholder="orders, news" onChange={(event) => setClientRoles(event.target.value)} />
+            <input id="clientRoles" value={clientRoles} placeholder="orders:read, orders:write" onChange={(event) => setClientRoles(event.target.value)} />
+            <p className="field-help">Comma-separated permissions used by route-level authorization.</p>
             <div className="actions">
-              <button type="button" onClick={createClientRecord}>Create client</button>
+              <button type="button" onClick={createClientRecord}>Create API client</button>
             </div>
             <div className="list">
-              {clients.length === 0 ? <p className="muted">No clients yet.</p> : clients.map((client) => (
+              {clients.length === 0 ? <div className="empty-state"><strong>No API clients yet</strong><span>Create your first application identity above.</span></div> : clients.map((client) => (
                 <div key={client.id} className={client.id === selectedId ? "item selected" : "item"}>
                   <button type="button" className="item-main" onClick={() => selectClient(client)}>
-                    <strong>{client.name}</strong><br />
-                    <small>{client.apiKey} · {(client.roles || []).join(", ")}</small>
+                    <span className="item-title"><i className="client-dot" />{client.name}</span>
+                    <small>{client.apiKey} · {(client.roles || []).join(", ") || "no roles"}</small>
                   </button>
                   <button type="button" className="text-danger" onClick={() => removeClient(client)}>Delete</button>
                 </div>
@@ -309,33 +328,39 @@ export default function App() {
           </section>
 
           <section className="card">
-            <h2>Targets</h2>
-            <p className="muted">{selected ? `Routes for ${selected.name}. A saved change is pushed to the gateway.` : "Select a client, then point a public path at their target."}</p>
+            <div className="card-head">
+              <div>
+                <p className="eyebrow">Routing</p>
+                <h2>Routes & policies</h2>
+                <p className="muted">{selected ? `Configuring ${selected.name}. Changes are published immediately.` : "Select a client, then connect a gateway path to its backend."}</p>
+              </div>
+              <span className="count-badge">{routes.length}</span>
+            </div>
             <div className="row">
               <div>
                 <label htmlFor="routeName">Name</label>
-                <input id="routeName" value={routeForm.name} placeholder="orders" onChange={(event) => setRouteForm({ ...routeForm, name: event.target.value })} />
+                <input id="routeName" value={routeForm.name} placeholder="Orders API" onChange={(event) => setRouteForm({ ...routeForm, name: event.target.value })} />
               </div>
               <div>
                 <label htmlFor="publicPath">Public path</label>
-                <input id="publicPath" value={routeForm.publicPath} placeholder="/shop" onChange={(event) => setRouteForm({ ...routeForm, publicPath: event.target.value })} />
+                <input id="publicPath" value={routeForm.publicPath} placeholder="/v1/orders" onChange={(event) => setRouteForm({ ...routeForm, publicPath: event.target.value })} />
               </div>
             </div>
             <label htmlFor="targetUrl">Target URL</label>
-            <input id="targetUrl" value={routeForm.targetUrl} placeholder="https://api.example.com" onChange={(event) => setRouteForm({ ...routeForm, targetUrl: event.target.value })} />
+            <input id="targetUrl" value={routeForm.targetUrl} placeholder="https://api.acme.com" onChange={(event) => setRouteForm({ ...routeForm, targetUrl: event.target.value })} />
             <div className="row">
               <div>
                 <label htmlFor="methods">Methods</label>
-                <input id="methods" value={routeForm.methods} onChange={(event) => setRouteForm({ ...routeForm, methods: event.target.value })} />
+                <input id="methods" value={routeForm.methods} placeholder="GET, POST" onChange={(event) => setRouteForm({ ...routeForm, methods: event.target.value })} />
               </div>
               <div>
                 <label htmlFor="rateLimit">Rate limit / minute</label>
-                <input id="rateLimit" value={routeForm.rateLimit} onChange={(event) => setRouteForm({ ...routeForm, rateLimit: event.target.value })} />
+                <input id="rateLimit" type="number" min="0" value={routeForm.rateLimit} placeholder="60" onChange={(event) => setRouteForm({ ...routeForm, rateLimit: event.target.value })} />
               </div>
             </div>
             <label htmlFor="allowedRoles">Allowed roles</label>
-            <input id="allowedRoles" value={routeForm.allowedRoles} placeholder="orders" onChange={(event) => setRouteForm({ ...routeForm, allowedRoles: event.target.value })} />
-            <p className="muted">This client's key always works. Your other clients can call this route if they have one of these roles.</p>
+            <input id="allowedRoles" value={routeForm.allowedRoles} placeholder="orders:read, admin" onChange={(event) => setRouteForm({ ...routeForm, allowedRoles: event.target.value })} />
+            <p className="field-help">The owner key always works. Other clients need one of these roles.</p>
             <div className="checks">
               <label><input type="checkbox" checked={routeForm.authRequired} onChange={(event) => setRouteForm({ ...routeForm, authRequired: event.target.checked })} /> Auth required</label>
               <label><input type="checkbox" checked={routeForm.stripPrefix} onChange={(event) => setRouteForm({ ...routeForm, stripPrefix: event.target.checked })} /> Strip prefix</label>
@@ -347,10 +372,11 @@ export default function App() {
               {editingRouteId ? <button type="button" className="secondary" onClick={() => { setEditingRouteId(null); setRouteForm(emptyRoute()); }}>Cancel</button> : null}
             </div>
             <div className="list">
-              {routes.map((route) => (
+              {selected && routes.length === 0 ? <div className="empty-state"><strong>No routes published</strong><span>Add the first route for {selected.name}.</span></div> : routes.map((route) => (
                 <div key={route.id} className="item">
                   <button type="button" className="item-main" onClick={() => editRoute(route)}>
-                    <strong>{route.publicPath} → {route.targetUrl}</strong><br />
+                    <span className="item-title"><span className="method-tag">{route.methods?.[0] || "ANY"}</span>{route.publicPath}</span>
+                    <small className="target-line">→ {route.targetUrl}</small>
                     <small>{route.methods.join(", ")}{route.authRequired ? " · API key" : " · public"}{route.stripPrefix ? " · strip prefix" : ""}{route.requireUserJwt ? " · user JWT" : ""}{route.allowedRoles?.length ? ` · roles: ${route.allowedRoles.join(", ")}` : ""}</small>
                   </button>
                   <button type="button" className="text-danger" onClick={() => removeRoute(route)}>Delete</button>
@@ -360,9 +386,15 @@ export default function App() {
           </section>
         </div>
 
-        <section className="card">
-          <h2>Send through the gateway</h2>
-          <p className="muted">This is the client call. It hits port 8080. The gateway checks the key, the rate limit, and idempotency, then forwards to the target or returns 429.</p>
+        <section className="card request-lab">
+          <div className="card-head">
+            <div>
+              <p className="eyebrow">Request lab</p>
+              <h2>Test the gateway</h2>
+              <p className="muted">Send a real request and inspect the status, headers, and response body.</p>
+            </div>
+            <span className="live-badge"><i /> Live request</span>
+          </div>
           <div className="row">
             <div>
               <label htmlFor="tryMethod">Method</label>
@@ -372,26 +404,29 @@ export default function App() {
             </div>
             <div>
               <label htmlFor="tryPath">Gateway path</label>
-              <input id="tryPath" value={call.path} placeholder="/shop/order" onChange={(event) => setCall({ ...call, path: event.target.value })} />
+              <input id="tryPath" value={call.path} placeholder="/v1/orders/ord_12345" onChange={(event) => setCall({ ...call, path: event.target.value })} />
             </div>
           </div>
           <div className="row">
             <div>
               <label htmlFor="tryKey">X-Api-Key</label>
-              <input id="tryKey" value={call.apiKey} onChange={(event) => setCall({ ...call, apiKey: event.target.value })} />
+              <input id="tryKey" value={call.apiKey} placeholder="Paste the calling application's API key" onChange={(event) => setCall({ ...call, apiKey: event.target.value })} />
             </div>
             <div>
               <label htmlFor="tryIdem">Idempotency-Key</label>
-              <input id="tryIdem" value={call.idempotencyKey} placeholder="only for idempotent POST" onChange={(event) => setCall({ ...call, idempotencyKey: event.target.value })} />
+              <input id="tryIdem" value={call.idempotencyKey} placeholder="e.g. order-create-8b27f1" onChange={(event) => setCall({ ...call, idempotencyKey: event.target.value })} />
             </div>
           </div>
-          <label htmlFor="tryBody">Body</label>
-          <textarea id="tryBody" value={call.body} onChange={(event) => setCall({ ...call, body: event.target.value })} />
+          <label htmlFor="tryBody">JSON body</label>
+          <textarea id="tryBody" value={call.body} placeholder={'{\n  "productId": "prod_123",\n  "quantity": 1\n}'} onChange={(event) => setCall({ ...call, body: event.target.value })} />
           <div className="actions">
-            <button type="button" onClick={send} disabled={sending}>Send</button>
+            <button type="button" onClick={send} disabled={sending}>{sending ? "Sending…" : "Send request"}</button>
             <span className="muted">{meta}</span>
           </div>
-          <pre>{result}</pre>
+          <div className="response-panel">
+            <span className="response-label">Response</span>
+            <pre>{result}</pre>
+          </div>
         </section>
 
         <Dashboard
@@ -406,8 +441,13 @@ export default function App() {
         />
 
         <section className="card">
-          <h2>Admin audit</h2>
-          <p className="muted">Creates, updates, and deletes on this account.</p>
+          <div className="card-head">
+            <div>
+              <p className="eyebrow">Governance</p>
+              <h2>Administrative activity</h2>
+              <p className="muted">Recent configuration changes made in this account.</p>
+            </div>
+          </div>
           {audits.length === 0 ? <p className="muted">No admin writes yet.</p> : (
             <table className="calls">
               <thead><tr><th>When</th><th>Action</th><th>Path</th></tr></thead>

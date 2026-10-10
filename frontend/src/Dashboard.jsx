@@ -2,14 +2,16 @@ export default function Dashboard({ clientName, overview, onRefresh }) {
   if (!clientName) {
     return (
       <section className="card dashboard">
-        <h2>Traffic</h2>
-        <p className="muted">Select a client to see the calls its API key made through the gateway.</p>
+        <p className="eyebrow">Observability</p>
+        <h2>Traffic analytics</h2>
+        <div className="empty-state dashboard-empty"><strong>Select an API client</strong><span>Traffic, latency, and status insights will appear here.</span></div>
       </section>
     );
   }
   if (!overview) {
     return (
       <section className="card dashboard">
+        <p className="eyebrow">Observability</p>
         <h2>Traffic · {clientName}</h2>
         <p className="muted">Loading the latest calls…</p>
       </section>
@@ -24,8 +26,9 @@ export default function Dashboard({ clientName, overview, onRefresh }) {
     <section className="card dashboard">
       <div className="dash-head">
         <div>
-          <h2>Traffic · {clientName}</h2>
-          <p className="muted">Latest {total} calls stored for this client. This is gateway traffic, not a log from the target app.</p>
+          <p className="eyebrow">Observability</p>
+          <h2>Traffic analytics</h2>
+          <p className="muted">Latest {total} calls routed for <strong>{clientName}</strong>.</p>
         </div>
         <button type="button" className="secondary" onClick={onRefresh}>Refresh</button>
       </div>
@@ -118,9 +121,9 @@ function SeriesChart({ series, max }) {
 
 function StatusMix({ overview }) {
   const parts = [
-    { label: "2xx / 3xx", count: overview.success, color: "#0f766e" },
-    { label: "4xx", count: overview.clientErrors, color: "#b45309" },
-    { label: "5xx", count: overview.serverErrors, color: "#b42318" }
+    { label: "2xx / 3xx", count: overview.success, color: "#00a35c" },
+    { label: "4xx", count: overview.clientErrors, color: "#d28a16" },
+    { label: "5xx", count: overview.serverErrors, color: "#c43d3d" }
   ];
   const total = parts.reduce((sum, part) => sum + part.count, 0);
   let cursor = 0;
