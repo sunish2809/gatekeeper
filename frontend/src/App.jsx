@@ -20,12 +20,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [routeForm, setRouteForm] = useState(emptyRoute);
   const [clientName, setClientName] = useState("");
-  const [clientKey, setClientKey] = useState("");
-  const [clientRoles, setClientRoles] = useState("");
   const [call, setCall] = useState({
     method: "GET",
     path: "",
-    apiKey: "",
     idempotencyKey: "",
     authorization: "",
     origin: "",
@@ -97,7 +94,6 @@ export default function App() {
     setSelectedId(client.id);
     setEditingRouteId(null);
     setRouteForm(emptyRoute());
-    setCall((current) => ({ ...current, apiKey: client.apiKey }));
     try {
       await loadRoutes(client.id);
       setOverview(await run(`/api/console/overview?clientId=${encodeURIComponent(client.id)}`));
@@ -129,12 +125,9 @@ export default function App() {
     try {
       const created = await run("/api/clients", {
         method: "POST",
-        body: JSON.stringify({ name: clientName, apiKey: clientKey, roles: splitList(clientRoles) })
+        body: JSON.stringify({ name: clientName })
       });
       setClientName("");
-      setClientKey("");
-      setClientRoles("");
-      setCall((current) => ({ ...current, apiKey: created.apiKey }));
       await refresh();
       setSelectedId(created.id);
       setRoutes(await run(`/api/clients/${created.id}/routes`));
@@ -156,14 +149,14 @@ export default function App() {
         publicPath: routeForm.publicPath,
         targetUrl: routeForm.targetUrl,
         methods: splitList(routeForm.methods),
-        allowedRoles: splitList(routeForm.allowedRoles),
-        authRequired: routeForm.authRequired,
+        allowedRoles: [],
+        authRequired: false,
         stripPrefix: routeForm.stripPrefix,
         idempotentPost: routeForm.idempotentPost,
         requireUserJwt: routeForm.requireUserJwt,
         rateLimit: Number(routeForm.rateLimit || "60"),
         rateWindowSeconds: 60,
-        requestHeaders: parseHeaders(routeForm.requestHeaders),
+        requestHeaders: { "X-Source": "gatekeeper" },
         allowedOrigins: splitList(routeForm.allowedOrigins),
         oidcIssuer: routeForm.oidcIssuer.trim() || null,
         oidcAudience: routeForm.oidcAudience.trim() || null,
@@ -174,7 +167,7 @@ export default function App() {
       } else {
         await run(`/api/clients/${selected.id}/routes`, { method: "POST", body: JSON.stringify(body) });
       }
-      setCall((current) => ({ ...current, path: savedPath, apiKey: selected.apiKey }));
+      setCall((current) => ({ ...current, path: savedPath }));
       setEditingRouteId(null);
       setRouteForm(emptyRoute());
       await refresh();
@@ -210,17 +203,14 @@ export default function App() {
       publicPath: route.publicPath,
       targetUrl: route.targetUrl,
       methods: (route.methods || []).join(","),
-      allowedRoles: (route.allowedRoles || []).join(","),
       rateLimit: String(route.rateLimit),
-      authRequired: route.authRequired,
       stripPrefix: route.stripPrefix,
       idempotentPost: route.idempotentPost,
       requireUserJwt: !!route.requireUserJwt,
       allowedOrigins: (route.allowedOrigins || []).join(", "),
       oidcIssuer: route.oidcIssuer || "",
       oidcAudience: route.oidcAudience || "",
-      requiredScopes: (route.requiredScopes || []).join(", "),
-      requestHeaders: formatHeaders(route.requestHeaders)
+      requiredScopes: (route.requiredScopes || []).join(", ")
     });
   }
 
@@ -294,7 +284,7 @@ export default function App() {
           </div>
         </section>
         <section className="steps">
-          <div><strong>01</strong><span>Register an application</span><small>Create an identity for a UI or a server that will call the gateway.</small></div>
+          <div><strong>01</strong><span>Register an application</span><small>Give your SaaS app a name so its routes live together.</small></div>
           <div><strong>02</strong><span>Publish a route</span><small>Map a public gateway path to a private backend URL.</small></div>
           <div><strong>03</strong><span>Point the UI at Gatekeeper</span><small>The browser calls the gateway with a user token; backends stay private.</small></div>
           <div><strong>04</strong><span>Observe traffic</span><small>Track volume, latency, failures, and throttled calls.</small></div>
@@ -307,33 +297,22 @@ export default function App() {
             <div className="card-head">
               <div>
                 <p className="eyebrow">Applications</p>
-                <h2>API clients</h2>
-                <p className="muted">Issue credentials and roles to applications that call your gateway.</p>
+                <h2>Applications</h2>
+                <p className="muted">One application holds the routes for your SaaS UI.</p>
               </div>
               <span className="count-badge">{clients.length}</span>
             </div>
-            <div className="row">
-              <div>
-                <label htmlFor="clientName">Application name</label>
-                <input id="clientName" value={clientName} placeholder="Acme Commerce — Production" onChange={(event) => setClientName(event.target.value)} />
-              </div>
-              <div>
-                <label htmlFor="clientKey">Client API key</label>
-                <input id="clientKey" value={clientKey} placeholder="e.g. acme_prod_key_7f9a2c" onChange={(event) => setClientKey(event.target.value)} />
-              </div>
-            </div>
-            <label htmlFor="clientRoles">Roles</label>
-            <input id="clientRoles" value={clientRoles} placeholder="orders:read, orders:write" onChange={(event) => setClientRoles(event.target.value)} />
-            <p className="field-help">Comma-separated permissions used by route-level authorization.</p>
+            <label htmlFor="clientName">Application name</label>
+            <input id="clientName" value={clientName} placeholder="Acme Commerce — Production" onChange={(event) => setClientName(event.target.value)} />
             <div className="actions">
-              <button type="button" onClick={createClientRecord}>Create API client</button>
+              <button type="button" onClick={createClientRecord}>Create application</button>
             </div>
             <div className="list">
-              {clients.length === 0 ? <div className="empty-state"><strong>No API clients yet</strong><span>Create your first application identity above.</span></div> : clients.map((client) => (
+              {clients.length === 0 ? <div className="empty-state"><strong>No applications yet</strong><span>Create your SaaS app above, then add routes.</span></div> : clients.map((client) => (
                 <div key={client.id} className={client.id === selectedId ? "item selected" : "item"}>
                   <button type="button" className="item-main" onClick={() => selectClient(client)}>
                     <span className="item-title"><i className="client-dot" />{client.name}</span>
-                    <small>{client.apiKey} · {(client.roles || []).join(", ") || "no roles"}</small>
+                    <small>Click to add pay, report, or other routes</small>
                   </button>
                   <button type="button" className="text-danger" onClick={() => removeClient(client)}>Delete</button>
                 </div>
@@ -373,12 +352,9 @@ export default function App() {
                 <input id="rateLimit" type="number" min="0" value={routeForm.rateLimit} placeholder="60" onChange={(event) => setRouteForm({ ...routeForm, rateLimit: event.target.value })} />
               </div>
             </div>
-            <label htmlFor="allowedRoles">Allowed roles</label>
-            <input id="allowedRoles" value={routeForm.allowedRoles} placeholder="orders:read, admin" onChange={(event) => setRouteForm({ ...routeForm, allowedRoles: event.target.value })} />
-            <p className="field-help">Used when another server-side client calls with X-Api-Key. The owner key always works.</p>
             <label htmlFor="allowedOrigins">Allowed browser origins</label>
             <input id="allowedOrigins" value={routeForm.allowedOrigins} placeholder="https://xyz.com, http://localhost:5173" onChange={(event) => setRouteForm({ ...routeForm, allowedOrigins: event.target.value })} />
-            <p className="field-help">Required for browser calls. Use the SaaS UI origin, not the backend URL.</p>
+            <p className="field-help">Your website address, so the browser is allowed to call the gateway.</p>
             <div className="row">
               <div>
                 <label htmlFor="oidcIssuer">User token issuer</label>
@@ -391,15 +367,11 @@ export default function App() {
             </div>
             <label htmlFor="requiredScopes">Required scopes</label>
             <input id="requiredScopes" value={routeForm.requiredScopes} placeholder="openid, email" onChange={(event) => setRouteForm({ ...routeForm, requiredScopes: event.target.value })} />
-            <p className="field-help">Issuer plus audience validates end-user OIDC tokens from JWKS. Leave blank to keep the optional HMAC user JWT.</p>
-            <label htmlFor="requestHeaders">Request headers added to the backend</label>
-            <textarea id="requestHeaders" value={routeForm.requestHeaders} placeholder={"X-Source=gatekeeper\nX-Internal-Token=verify-me"} onChange={(event) => setRouteForm({ ...routeForm, requestHeaders: event.target.value })} />
-            <p className="field-help">One <code>Name=value</code> per line. Backends can reject traffic that did not come through the gateway.</p>
+            <p className="field-help">From the same login provider your UI already uses. The gateway checks the user token; it does not log the user in.</p>
             <div className="checks">
-              <label><input type="checkbox" checked={routeForm.authRequired} onChange={(event) => setRouteForm({ ...routeForm, authRequired: event.target.checked })} /> Require API key</label>
               <label><input type="checkbox" checked={routeForm.stripPrefix} onChange={(event) => setRouteForm({ ...routeForm, stripPrefix: event.target.checked })} /> Strip prefix</label>
               <label><input type="checkbox" checked={routeForm.idempotentPost} onChange={(event) => setRouteForm({ ...routeForm, idempotentPost: event.target.checked })} /> Idempotent POST</label>
-              <label><input type="checkbox" checked={routeForm.requireUserJwt} onChange={(event) => setRouteForm({ ...routeForm, requireUserJwt: event.target.checked })} /> Require user token (OIDC)</label>
+              <label><input type="checkbox" checked={routeForm.requireUserJwt} onChange={(event) => setRouteForm({ ...routeForm, requireUserJwt: event.target.checked })} /> Require user token</label>
             </div>
             <div className="actions">
               <button type="button" onClick={saveRoute}>{editingRouteId ? "Update route" : "Save route"}</button>
@@ -411,7 +383,7 @@ export default function App() {
                   <button type="button" className="item-main" onClick={() => editRoute(route)}>
                     <span className="item-title"><span className="method-tag">{route.methods?.[0] || "ANY"}</span>{route.publicPath}</span>
                     <small className="target-line">→ {route.targetUrl}</small>
-                    <small>{route.methods.join(", ")}{route.authRequired ? " · API key" : " · no API key"}{route.stripPrefix ? " · strip prefix" : ""}{route.requireUserJwt || route.oidcIssuer ? " · user token" : ""}{route.allowedOrigins?.length ? ` · CORS: ${route.allowedOrigins.join(", ")}` : ""}{route.allowedRoles?.length ? ` · roles: ${route.allowedRoles.join(", ")}` : ""}</small>
+                    <small>{route.methods.join(", ")}{route.requireUserJwt || route.oidcIssuer ? " · user token" : ""}{route.allowedOrigins?.length ? ` · ${route.allowedOrigins.join(", ")}` : ""}{route.stripPrefix ? " · strip prefix" : ""}</small>
                   </button>
                   <button type="button" className="text-danger" onClick={() => removeRoute(route)}>Delete</button>
                 </div>
@@ -443,24 +415,16 @@ export default function App() {
           </div>
           <div className="row">
             <div>
-              <label htmlFor="tryKey">X-Api-Key</label>
-              <input id="tryKey" value={call.apiKey} placeholder="Optional for browser-style routes" onChange={(event) => setCall({ ...call, apiKey: event.target.value })} />
+              <label htmlFor="tryAuth">User token</label>
+              <input id="tryAuth" value={call.authorization} placeholder="Paste the signed-in user's access token" onChange={(event) => setCall({ ...call, authorization: event.target.value })} />
             </div>
             <div>
-              <label htmlFor="tryIdem">Idempotency-Key</label>
-              <input id="tryIdem" value={call.idempotencyKey} placeholder="e.g. order-create-8b27f1" onChange={(event) => setCall({ ...call, idempotencyKey: event.target.value })} />
-            </div>
-          </div>
-          <div className="row">
-            <div>
-              <label htmlFor="tryAuth">Authorization (Bearer)</label>
-              <input id="tryAuth" value={call.authorization} placeholder="Paste an end-user access token" onChange={(event) => setCall({ ...call, authorization: event.target.value })} />
-            </div>
-            <div>
-              <label htmlFor="tryOrigin">Origin</label>
+              <label htmlFor="tryOrigin">Website origin</label>
               <input id="tryOrigin" value={call.origin} placeholder="https://xyz.com" onChange={(event) => setCall({ ...call, origin: event.target.value })} />
             </div>
           </div>
+          <label htmlFor="tryIdem">Idempotency-Key</label>
+          <input id="tryIdem" value={call.idempotencyKey} placeholder="Only needed if Idempotent POST is on" onChange={(event) => setCall({ ...call, idempotencyKey: event.target.value })} />
           <label htmlFor="tryBody">JSON body</label>
           <textarea id="tryBody" value={call.body} placeholder={'{\n  "productId": "prod_123",\n  "quantity": 1\n}'} onChange={(event) => setCall({ ...call, body: event.target.value })} />
           <div className="actions">
@@ -516,46 +480,20 @@ function splitList(value) {
   return (value || "").split(",").map((item) => item.trim()).filter(Boolean);
 }
 
-function parseHeaders(raw) {
-  const headers = {};
-  for (const line of (raw || "").split("\n")) {
-    const split = line.indexOf("=");
-    if (split <= 0) {
-      continue;
-    }
-    const name = line.slice(0, split).trim();
-    if (name) {
-      headers[name] = line.slice(split + 1);
-    }
-  }
-  return headers;
-}
-
-function formatHeaders(headers) {
-  if (!headers || typeof headers !== "object") {
-    return "X-Source=gatekeeper";
-  }
-  const lines = Object.entries(headers).map(([name, value]) => `${name}=${value ?? ""}`);
-  return lines.length ? lines.join("\n") : "X-Source=gatekeeper";
-}
-
 function emptyRoute() {
   return {
     name: "",
     publicPath: "",
     targetUrl: "",
     methods: "GET,POST",
-    allowedRoles: "",
     rateLimit: "60",
-    authRequired: false,
     stripPrefix: true,
     idempotentPost: false,
-    requireUserJwt: false,
+    requireUserJwt: true,
     allowedOrigins: "",
     oidcIssuer: "",
     oidcAudience: "",
-    requiredScopes: "",
-    requestHeaders: "X-Source=gatekeeper"
+    requiredScopes: ""
   };
 }
 
