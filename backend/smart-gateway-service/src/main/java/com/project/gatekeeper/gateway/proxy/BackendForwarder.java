@@ -28,11 +28,12 @@ public class BackendForwarder {
     private static final Set<String> SKIP_REQUEST_HEADERS = Set.of(
             "host", "content-length", "connection", "keep-alive", "proxy-authenticate",
             "proxy-authorization", "te", "trailer", "transfer-encoding", "upgrade",
-            "x-api-key", "x-admin-key");
+            "x-api-key", "x-admin-key", "x-gatekeeper-user");
 
     private final ConcurrentMap<Integer, RestClient> clients = new ConcurrentHashMap<>();
 
-    public UpstreamResponse forward(RouteRule route, HttpServletRequest request, byte[] body, String correlationId) {
+    public UpstreamResponse forward(RouteRule route, HttpServletRequest request, byte[] body, String correlationId,
+                                    String userSubject) {
         URI target = TargetUrls.build(
                 route.publicPath(), route.targetUrl(), route.stripPrefix(),
                 request.getRequestURI(), request.getQueryString());
@@ -41,7 +42,7 @@ public class BackendForwarder {
             RestClient.RequestBodySpec spec = client
                     .method(HttpMethod.valueOf(request.getMethod()))
                     .uri(target)
-                    .headers(headers -> copyRequestHeaders(headers, request, route, correlationId));
+                    .headers(headers -> copyRequestHeaders(headers, request, route, correlationId, userSubject));
             if (sendsBody(request.getMethod())) {
                 spec.body(body);
             }
@@ -61,7 +62,8 @@ public class BackendForwarder {
         return RestClient.builder().requestFactory(factory).build();
     }
 
-    private void copyRequestHeaders(HttpHeaders headers, HttpServletRequest request, RouteRule route, String correlationId) {
+    private void copyRequestHeaders(HttpHeaders headers, HttpServletRequest request, RouteRule route,
+                                    String correlationId, String userSubject) {
         Enumeration<String> names = request.getHeaderNames();
         while (names != null && names.hasMoreElements()) {
             String name = names.nextElement();
@@ -74,6 +76,9 @@ public class BackendForwarder {
             }
         }
         headers.set(CorrelationFilter.HEADER, correlationId);
+        if (userSubject != null && !userSubject.isBlank()) {
+            headers.set("X-Gatekeeper-User", userSubject);
+        }
         route.requestHeaders().forEach(headers::set);
     }
 
@@ -113,7 +118,8 @@ public class BackendForwarder {
             "te", "trailer", "transfer-encoding", "upgrade", "content-length");
 
     public static boolean skipResponseHeader(String name) {
-        return SKIP_RESPONSE_HEADERS.contains(name.toLowerCase(Locale.ROOT));
+        String lower = name.toLowerCase(Locale.ROOT);
+        return SKIP_RESPONSE_HEADERS.contains(lower) || lower.startsWith("access-control-");
     }
 
     public static byte[] readBody(HttpServletRequest request) throws IOException {

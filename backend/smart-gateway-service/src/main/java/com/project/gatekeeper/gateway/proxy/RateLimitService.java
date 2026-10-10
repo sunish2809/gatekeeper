@@ -19,13 +19,12 @@ public class RateLimitService {
         this.redis = redis;
     }
 
-    public Decision check(RouteRule route, String apiKey) {
+    public Decision check(RouteRule route, String identity) {
         if (route.rateLimit() <= 0) {
             return Decision.unlimited();
         }
         long window = route.rateWindowSeconds();
         long bucket = Instant.now().getEpochSecond() / window;
-        String identity = identity(apiKey);
         String key = "rl:" + route.routeId() + ":" + identity + ":" + bucket;
         try {
             Long count = redis.opsForValue().increment(key);
@@ -54,15 +53,25 @@ public class RateLimitService {
         }
     }
 
-    private static String identity(String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
-            return "public";
+    public static String identity(String apiKey, String userSubject, String clientIp) {
+        if (apiKey != null && !apiKey.isBlank()) {
+            return "k:" + hash(apiKey);
         }
+        if (userSubject != null && !userSubject.isBlank()) {
+            return "u:" + hash(userSubject);
+        }
+        if (clientIp != null && !clientIp.isBlank()) {
+            return "ip:" + hash(clientIp);
+        }
+        return "public";
+    }
+
+    private static String hash(String value) {
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(apiKey.getBytes(StandardCharsets.UTF_8));
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
             return HexFormat.of().formatHex(digest, 0, 8);
         } catch (Exception ex) {
-            return "key";
+            return "anon";
         }
     }
 }

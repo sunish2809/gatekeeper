@@ -40,7 +40,7 @@ The Kafka image is a single KRaft broker with a 256 MB heap. It advertises `${RA
 | `GATEKEEPER_ADMIN_KEY` | output of `openssl rand -hex 32` |
 | `GATEKEEPER_JWT_SECRET` | output of `openssl rand -hex 48` (must be at least 32 characters) |
 
-`GATEKEEPER_ADMIN_KEY` is the service key between management, gateway, and analytics. `GATEKEEPER_JWT_SECRET` signs console logins and verifies user JWTs on routes with "Require user JWT". Changing the JWT secret logs everyone out.
+`GATEKEEPER_ADMIN_KEY` is the service key between management, gateway, and analytics. `GATEKEEPER_JWT_SECRET` signs console logins and verifies the legacy HMAC user JWT when a route has no OIDC issuer. Changing the JWT secret logs everyone out.
 
 ## 4. Application services
 
@@ -138,7 +138,7 @@ curl https://<gateway-domain>/health
 curl https://<gateway-domain>/health/routes
 ```
 
-Then open `https://<frontend-domain>`, register an account, create a client, add a route whose target is a public URL (for example public path `/bin`, target `https://httpbin.org`, strip prefix on), and call it:
+Then open `https://<frontend-domain>`, register an account, create a client, and add a route. Production targets should be private Railway URLs or otherwise unreachable from the public internet. `https://httpbin.org` is only a smoke-test target. Example: public path `/bin`, target `https://httpbin.org`, strip prefix on, then:
 
 ```bash
 curl https://<gateway-domain>/bin/get -H 'X-Api-Key: <client api key>'

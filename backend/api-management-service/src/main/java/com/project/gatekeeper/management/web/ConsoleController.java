@@ -81,6 +81,13 @@ public class ConsoleController {
             if (request.idempotencyKey() != null && !request.idempotencyKey().isBlank()) {
                 builder.header("Idempotency-Key", request.idempotencyKey().trim());
             }
+            if (request.authorization() != null && !request.authorization().isBlank()) {
+                String token = request.authorization().trim();
+                builder.header("Authorization", token.regionMatches(true, 0, "Bearer ", 0, 7) ? token : "Bearer " + token);
+            }
+            if (request.origin() != null && !request.origin().isBlank()) {
+                builder.header("Origin", request.origin().trim());
+            }
             byte[] body = request.body() == null ? new byte[0] : request.body().getBytes();
             boolean sendBody = !method.equals("GET") && !method.equals("DELETE");
             if (sendBody) {
@@ -216,7 +223,8 @@ public class ConsoleController {
     public record ServiceStatus(String name, boolean up, String detail) {
     }
 
-    public record TryRequest(String method, String path, String apiKey, String idempotencyKey, String body) {
+    public record TryRequest(String method, String path, String apiKey, String idempotencyKey, String body,
+                             String authorization, String origin) {
     }
 
     public record TryResponse(int status, String correlationId, long latencyMs, Map<String, List<String>> headers,

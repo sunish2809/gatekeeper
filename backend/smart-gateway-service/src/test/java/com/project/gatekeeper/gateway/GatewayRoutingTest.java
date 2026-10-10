@@ -1,5 +1,7 @@
 package com.project.gatekeeper.gateway;
 
+import com.project.gatekeeper.gateway.proxy.RateLimitService;
+import com.project.gatekeeper.gateway.proxy.RouteCors;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.Match;
 import com.project.gatekeeper.gateway.snapshot.GatewayModels.RouteRule;
 import com.project.gatekeeper.gateway.snapshot.RouteMatcher;
@@ -55,6 +57,33 @@ class GatewayRoutingTest {
 
     private RouteRule rule(String path, Set<String> methods) {
         return new RouteRule("r", "c", "key", "admin", path, "http://localhost:9000",
-                methods, 1000, true, Set.of(), 10, 60, false, true, Map.of(), false);
+                methods, 1000, true, Set.of(), 10, 60, false, true, Map.of(), false,
+                Set.of(), null, null, Set.of());
+    }
+
+    @Test
+    void corsAllowsListedOriginAndWildcard() {
+        RouteRule listed = new RouteRule("r", "c", "key", "admin", "/shop", "http://localhost:9000",
+                Set.of("GET"), 1000, false, Set.of(), 0, 60, false, true, Map.of(), false,
+                Set.of("https://xyz.com"), null, null, Set.of());
+        assertTrue(RouteCors.allows(listed, "https://xyz.com"));
+        assertTrue(!RouteCors.allows(listed, "https://evil.example"));
+
+        RouteRule any = new RouteRule("r", "c", "key", "admin", "/shop", "http://localhost:9000",
+                Set.of("GET"), 1000, false, Set.of(), 0, 60, false, true, Map.of(), false,
+                Set.of("*"), null, null, Set.of());
+        assertTrue(RouteCors.allows(any, "https://anything.example"));
+    }
+
+    @Test
+    void rateLimitIdentityPrefersApiKeyThenUserThenIp() {
+        String withKey = RateLimitService.identity("gk_shop", "user-1", "10.0.0.1");
+        String sameKey = RateLimitService.identity("gk_shop", "user-2", "10.0.0.2");
+        String userOnly = RateLimitService.identity(null, "user-1", "10.0.0.1");
+        String ipOnly = RateLimitService.identity(null, null, "10.0.0.1");
+        assertEquals(withKey, sameKey);
+        assertTrue(userOnly.startsWith("u:"));
+        assertTrue(ipOnly.startsWith("ip:"));
+        assertTrue(!withKey.equals(userOnly));
     }
 }

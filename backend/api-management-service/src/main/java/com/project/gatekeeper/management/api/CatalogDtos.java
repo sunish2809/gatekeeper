@@ -42,7 +42,11 @@ public final class CatalogDtos {
             Boolean stripPrefix,
             Boolean requireUserJwt,
             Map<String, String> requestHeaders,
-            Boolean enabled
+            Boolean enabled,
+            List<String> allowedOrigins,
+            String oidcIssuer,
+            String oidcAudience,
+            List<String> requiredScopes
     ) {
     }
 
@@ -62,7 +66,11 @@ public final class CatalogDtos {
             boolean stripPrefix,
             boolean requireUserJwt,
             Map<String, String> requestHeaders,
-            boolean enabled
+            boolean enabled,
+            List<String> allowedOrigins,
+            String oidcIssuer,
+            String oidcAudience,
+            List<String> requiredScopes
     ) {
     }
 
@@ -94,7 +102,11 @@ public final class CatalogDtos {
             boolean stripPrefix,
             boolean requireUserJwt,
             Map<String, String> requestHeaders,
-            boolean enabled
+            boolean enabled,
+            List<String> allowedOrigins,
+            String oidcIssuer,
+            String oidcAudience,
+            List<String> requiredScopes
     ) {
     }
 

@@ -23,4 +23,13 @@ class TextsTest {
     void rejectsBadTarget() {
         assertThrows(ApiException.class, () -> Texts.targetUrl("ftp://example.com"));
     }
+
+    @Test
+    void normalizesOriginsAndIssuer() {
+        assertEquals("https://xyz.com,http://localhost:3000",
+                Texts.origins(List.of("https://XYZ.com/", "http://localhost:3000")));
+        assertEquals("https://accounts.google.com", Texts.issuer("https://accounts.google.com"));
+        assertThrows(ApiException.class, () -> Texts.origins(List.of("https://xyz.com/app")));
+        assertThrows(ApiException.class, () -> Texts.issuer("http://evil.example"));
+    }
 }

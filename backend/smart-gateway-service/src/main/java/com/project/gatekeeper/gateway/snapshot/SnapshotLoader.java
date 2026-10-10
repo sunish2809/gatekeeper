@@ -89,7 +89,11 @@ public class SnapshotLoader implements ApplicationRunner {
                         route.idempotentPost(),
                         route.stripPrefix(),
                         route.requestHeaders() == null ? Map.of() : Map.copyOf(route.requestHeaders()),
-                        route.requireUserJwt()));
+                        route.requireUserJwt(),
+                        setOf(route.allowedOrigins()),
+                        blankToNull(route.oidcIssuer()),
+                        blankToNull(route.oidcAudience()),
+                        setOf(route.requiredScopes())));
             }
         }
         return rules;
@@ -106,6 +110,10 @@ public class SnapshotLoader implements ApplicationRunner {
             }
         }
         return callers;
+    }
+
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private Set<String> setOf(List<String> values) {

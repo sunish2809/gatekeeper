@@ -40,7 +40,11 @@ public final class GatewayModels {
             boolean stripPrefix,
             Map<String, String> requestHeaders,
             boolean enabled,
-            boolean requireUserJwt
+            boolean requireUserJwt,
+            List<String> allowedOrigins,
+            String oidcIssuer,
+            String oidcAudience,
+            List<String> requiredScopes
     ) {
     }
 
@@ -60,7 +64,11 @@ public final class GatewayModels {
             boolean idempotentPost,
             boolean stripPrefix,
             Map<String, String> requestHeaders,
-            boolean requireUserJwt
+            boolean requireUserJwt,
+            Set<String> allowedOrigins,
+            String oidcIssuer,
+            String oidcAudience,
+            Set<String> requiredScopes
     ) {
     }
 

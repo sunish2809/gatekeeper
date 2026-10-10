@@ -41,18 +41,18 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
     private final IdempotencyService idempotency;
     private final BackendForwarder forwarder;
     private final AccessPublisher publisher;
-    private final CallerJwt callerJwt;
+    private final UserTokenService userTokens;
     private final int maxBodyBytes;
 
     public GatewayProxyFilter(SnapshotStore store, RateLimitService rateLimits, IdempotencyService idempotency,
-                              BackendForwarder forwarder, AccessPublisher publisher, CallerJwt callerJwt,
+                              BackendForwarder forwarder, AccessPublisher publisher, UserTokenService userTokens,
                               @org.springframework.beans.factory.annotation.Value("${gatekeeper.max-body-bytes:1048576}") int maxBodyBytes) {
         this.store = store;
         this.rateLimits = rateLimits;
         this.idempotency = idempotency;
         this.forwarder = forwarder;
         this.publisher = publisher;
-        this.callerJwt = callerJwt;
+        this.userTokens = userTokens;
         this.maxBodyBytes = maxBodyBytes;
     }
 
@@ -73,8 +73,11 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
         String clientId = null;
         String routeId = null;
         String error = null;
+        boolean publish = true;
         try {
-            Match match = store.match(method, path);
+            boolean preflight = RouteCors.isPreflight(request);
+            String matchMethod = preflight ? request.getHeader(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD) : method;
+            Match match = store.match(matchMethod, path);
             if (match.methodNotAllowed()) {
                 status = HttpServletResponse.SC_METHOD_NOT_ALLOWED;
                 error = "method_not_allowed";
@@ -91,6 +94,30 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
             clientId = route.clientId();
             routeId = route.routeId();
 
+            String origin = request.getHeader(HttpHeaders.ORIGIN);
+            boolean corsOk = RouteCors.allows(route, origin);
+            if (preflight) {
+                publish = false;
+                if (!corsOk) {
+                    status = HttpServletResponse.SC_FORBIDDEN;
+                    error = "cors_origin_denied";
+                    writeError(response, status, error, "Origin is not allowed for this route", correlationId);
+                    return;
+                }
+                RouteCors.writePreflight(response, route, request, origin);
+                status = HttpServletResponse.SC_NO_CONTENT;
+                return;
+            }
+            if (origin != null && !origin.isBlank() && RouteCors.configured(route) && !corsOk) {
+                status = HttpServletResponse.SC_FORBIDDEN;
+                error = "cors_origin_denied";
+                writeError(response, status, error, "Origin is not allowed for this route", correlationId);
+                return;
+            }
+            if (corsOk) {
+                RouteCors.writeActual(response, route, origin);
+            }
+
             if (route.authRequired()) {
                 Auth auth = authorize(request, route);
                 if (auth != Auth.OK) {
@@ -104,12 +131,20 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
                 }
             }
 
-            if (route.requireUserJwt() && !callerJwt.valid(request.getHeader(HttpHeaders.AUTHORIZATION))) {
+            UserTokenService.Outcome token = userTokens.verify(route, request.getHeader(HttpHeaders.AUTHORIZATION));
+            if (token.status() == UserTokenService.Status.UNAVAILABLE) {
+                status = HttpServletResponse.SC_SERVICE_UNAVAILABLE;
+                error = "dependency_unavailable";
+                writeError(response, status, error, "Identity provider is unavailable", correlationId);
+                return;
+            }
+            if (token.status() == UserTokenService.Status.INVALID) {
                 status = HttpServletResponse.SC_UNAUTHORIZED;
                 error = "invalid_user_token";
                 writeError(response, status, error, "Send a valid user JWT in Authorization: Bearer", correlationId);
                 return;
             }
+            String userSubject = token.subject();
 
             String presentedKey = request.getHeader(API_KEY);
             int contentLength = request.getContentLength();
@@ -120,7 +155,7 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
                 return;
             }
 
-            Decision decision = rateLimits.check(route, presentedKey);
+            Decision decision = rateLimits.check(route, RateLimitService.identity(presentedKey, userSubject, clientIp(request)));
             if (decision.limit() > 0) {
                 response.setHeader("X-RateLimit-Limit", Integer.toString(decision.limit()));
                 response.setHeader("X-RateLimit-Remaining", Long.toString(decision.remaining()));
@@ -164,7 +199,7 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
                 writeError(response, status, error, "Request body is larger than " + maxBodyBytes + " bytes", correlationId);
                 return;
             }
-            UpstreamResponse upstream = forwarder.forward(route, request, body, correlationId);
+            UpstreamResponse upstream = forwarder.forward(route, request, body, correlationId, userSubject);
             status = upstream.status();
             if (trackIdempotency) {
                 idempotency.complete(route.routeId(), idempotencyKey, status,
@@ -186,8 +221,10 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
             error = "gateway_error";
             writeError(response, status, error, "Gateway failed to process the request", correlationId);
         } finally {
-            long latencyMs = (System.nanoTime() - started) / 1_000_000;
-            publisher.publish(correlationId, clientId, routeId, method, path, status, latencyMs, error);
+            if (publish) {
+                long latencyMs = (System.nanoTime() - started) / 1_000_000;
+                publisher.publish(correlationId, clientId, routeId, method, path, status, latencyMs, error);
+            }
         }
     }
 
@@ -212,6 +249,15 @@ public class GatewayProxyFilter extends OncePerRequestFilter {
             }
         }
         return Auth.FORBIDDEN;
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwarded = request.getHeader("X-Forwarded-For");
+        if (forwarded != null && !forwarded.isBlank()) {
+            int comma = forwarded.indexOf(',');
+            return (comma < 0 ? forwarded : forwarded.substring(0, comma)).trim();
+        }
+        return request.getRemoteAddr();
     }
 
     private enum Auth {

@@ -54,6 +54,62 @@ public final class Texts {
         return value;
     }
 
+    public static String origins(List<String> origins) {
+        if (origins == null || origins.isEmpty()) {
+            return null;
+        }
+        List<String> normalized = origins.stream()
+                .map(origin -> origin == null ? "" : origin.trim())
+                .filter(origin -> !origin.isEmpty())
+                .map(Texts::origin)
+                .toList();
+        return csv(normalized);
+    }
+
+    private static String origin(String raw) {
+        if (raw.equals("*")) {
+            return raw;
+        }
+        String value = raw.endsWith("/") ? raw.substring(0, raw.length() - 1) : raw;
+        URI uri;
+        try {
+            uri = URI.create(value);
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_origin", raw + " is not a valid origin");
+        }
+        String scheme = uri.getScheme();
+        boolean bare = uri.getRawPath() == null || uri.getRawPath().isEmpty();
+        if (scheme == null || (!scheme.equals("http") && !scheme.equals("https")) || uri.getHost() == null
+                || !bare || uri.getRawQuery() != null || uri.getRawFragment() != null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_origin",
+                    raw + " must look like https://app.example.com (scheme and host only)");
+        }
+        return value.toLowerCase(Locale.ROOT);
+    }
+
+    public static String issuer(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String value = raw.trim();
+        URI uri;
+        try {
+            uri = URI.create(value);
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_issuer", "oidcIssuer is not a valid URL");
+        }
+        boolean local = "localhost".equals(uri.getHost()) || "127.0.0.1".equals(uri.getHost());
+        boolean secure = "https".equals(uri.getScheme()) || ("http".equals(uri.getScheme()) && local);
+        if (!secure || uri.getHost() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_issuer", "oidcIssuer must be an https URL");
+        }
+        return value;
+    }
+
+    public static String trimmed(String raw) {
+        return raw == null || raw.isBlank() ? null : raw.trim();
+    }
+
     public static String methods(List<String> methods) {
         if (methods == null || methods.isEmpty()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_methods", "At least one HTTP method is required");

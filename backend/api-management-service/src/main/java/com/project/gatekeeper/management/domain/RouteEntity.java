@@ -63,6 +63,18 @@ public class RouteEntity {
     @Column(length = 4000)
     private String requestHeaders;
 
+    @Column(length = 2000)
+    private String allowedOrigins;
+
+    @Column(length = 500)
+    private String oidcIssuer;
+
+    @Column(length = 500)
+    private String oidcAudience;
+
+    @Column(length = 1000)
+    private String requiredScopes;
+
     @Column(nullable = false)
     private boolean enabled;
 

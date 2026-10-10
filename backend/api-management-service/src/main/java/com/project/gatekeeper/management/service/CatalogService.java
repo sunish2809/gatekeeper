@@ -163,6 +163,16 @@ public class CatalogService {
         route.setRequireUserJwt(Texts.or(request.requireUserJwt(), false));
         route.setRequestHeaders(Texts.encodeHeaders(request.requestHeaders()));
         route.setEnabled(Texts.or(request.enabled(), true));
+        route.setAllowedOrigins(Texts.origins(request.allowedOrigins()));
+        route.setOidcIssuer(Texts.issuer(request.oidcIssuer()));
+        route.setOidcAudience(Texts.trimmed(request.oidcAudience()));
+        route.setRequiredScopes(Texts.csv(request.requiredScopes()));
+        if (route.getOidcIssuer() != null && route.getOidcAudience() == null) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_route", "oidcAudience is required when oidcIssuer is set");
+        }
+        if (route.getOidcIssuer() != null) {
+            route.setRequireUserJwt(true);
+        }
     }
 
     private void ensurePathAvailable(String publicPath, String currentRouteId) {
@@ -219,7 +229,11 @@ public class CatalogService {
                 route.isStripPrefix(),
                 route.isRequireUserJwt(),
                 Texts.decodeHeaders(route.getRequestHeaders()),
-                route.isEnabled());
+                route.isEnabled(),
+                Texts.split(route.getAllowedOrigins()),
+                route.getOidcIssuer(),
+                route.getOidcAudience(),
+                Texts.split(route.getRequiredScopes()));
     }
 
     private RouteSnapshot toSnapshotRoute(RouteEntity route) {
@@ -237,7 +251,11 @@ public class CatalogService {
                 route.isStripPrefix(),
                 route.isRequireUserJwt(),
                 Texts.decodeHeaders(route.getRequestHeaders()),
-                route.isEnabled());
+                route.isEnabled(),
+                Texts.split(route.getAllowedOrigins()),
+                route.getOidcIssuer(),
+                route.getOidcAudience(),
+                Texts.split(route.getRequiredScopes()));
     }
 
     private AuditResponse toAudit(AuditEntry entry) {

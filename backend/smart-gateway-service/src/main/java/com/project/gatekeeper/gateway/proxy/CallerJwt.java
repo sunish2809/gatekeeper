@@ -23,19 +23,27 @@ public class CallerJwt {
     }
 
     public boolean valid(String authorization) {
+        return subject(authorization) != null;
+    }
+
+    public String subject(String authorization) {
         if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
-            return false;
+            return null;
         }
         String token = authorization.substring(7).trim();
         try {
             SignedJWT jwt = SignedJWT.parse(token);
             if (!jwt.verify(new MACVerifier(secret))) {
-                return false;
+                return null;
             }
             Date expires = jwt.getJWTClaimsSet().getExpirationTime();
-            return expires != null && expires.after(new Date());
+            if (expires == null || !expires.after(new Date())) {
+                return null;
+            }
+            String subject = jwt.getJWTClaimsSet().getSubject();
+            return subject == null || subject.isBlank() ? null : subject;
         } catch (ParseException | JOSEException ex) {
-            return false;
+            return null;
         }
     }
 }
