@@ -23,6 +23,8 @@ public class ClientEntity {
 
     private String adminId;
 
+    private String organizationId;
+
     @Column(nullable = false)
     private String name;
 

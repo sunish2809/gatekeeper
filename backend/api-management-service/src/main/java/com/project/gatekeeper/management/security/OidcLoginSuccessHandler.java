@@ -38,9 +38,15 @@ public class OidcLoginSuccessHandler implements AuthenticationSuccessHandler {
             return;
         }
         String name = user.getFullName();
-        String code = codes.issue(auth.loginOrRegisterOidc(name, user.getEmail()));
-        response.sendRedirect(frontendOrigin + "/?oidc_code="
-                + URLEncoder.encode(code, StandardCharsets.UTF_8));
+        try {
+            String code = codes.issue(auth.loginExistingOidc(name, user.getEmail()));
+            response.sendRedirect(frontendOrigin + "/?oidc_code="
+                    + URLEncoder.encode(code, StandardCharsets.UTF_8));
+        } catch (RuntimeException ex) {
+            response.sendRedirect(errorUrl(ex.getMessage() == null
+                    ? "This Google account is not provisioned"
+                    : ex.getMessage()));
+        }
     }
 
     private String errorUrl(String message) {

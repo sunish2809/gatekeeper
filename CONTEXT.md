@@ -1,6 +1,6 @@
 # Gatekeeper context
 
-Plug-and-play API gateway. A backend owner registers in the management service, points a public path at their own backend, and sends traffic to the smart gateway. The gateway does not contain backend business logic.
+Plug-and-play API gateway. A Gatekeeper platform administrator provisions an organization and its one tenant admin. That tenant points a public path at their private backend. The smart gateway enforces policy. There is no public self-signup.
 
 This file is the running project context. Update it when behavior, ports, or contracts change.
 
@@ -81,7 +81,7 @@ cd backend/analytics-service && ./mvnw spring-boot:run
 cd frontend && npm install && npm run dev
 ```
 
-Open http://localhost:5174, register or log in, create a client, save a route whose target URL is their backend, then send a call. The gateway on port 8080 applies the policy and either forwards or returns 429. The dashboard shows the analytics events.
+Open http://localhost:5174 as the platform admin (`platform@gatekeeper.local` / `platform-admin-change-me` locally), create an organization and tenant admin, then sign in as that tenant, save a route, and send a call. The gateway on port 8080 applies the policy. The dashboard shows the analytics events.
 
 ## Deploy (Railway Hobby)
 
@@ -99,7 +99,7 @@ Open http://localhost:5174, register or log in, create a client, save a route wh
 
 Two sides sit outside Gatekeeper. The **client** is the caller's app. The **target** is their backend. Gatekeeper never contains the target's business logic.
 
-1. An admin opens the React frontend and registers the client plus the target routes: public path, private target URL, methods, CORS origins, OIDC issuer/audience, rate limit, and whether POST is idempotent. That request goes to API management, which stores it in MySQL. Admin writes are audited.
+1. A platform admin creates an organization (name, unique slug like `foodfast`) and the tenant admin account. The tenant signs in and publishes routes. Typed path `/order` is stored as `/foodfast/order`. CORS origins, OIDC issuer/audience, rate limit, timeout, and idempotency are tenant-owned. That request goes to API management, which stores it in MySQL. Admin writes are audited.
 2. When the smart gateway starts, it calls management `GET /internal/snapshot` and keeps that configuration in memory. The live request never reads MySQL.
 3. The customer UI calls the smart gateway, not the target. The gateway adds or reuses `X-Correlation-Id`.
 4. The gateway matches the longest public path, applies CORS, then checks the user token and optional API key. Over the Redis rate limit, it returns 429 and does not call the target. An idempotent POST is answered from Redis when the same `Idempotency-Key` was already completed.
@@ -110,50 +110,36 @@ Two sides sit outside Gatekeeper. The **client** is the caller's app. The **targ
 
 The intended production topology is **customer UI → Gatekeeper → private services**. The SaaS browser calls the public gateway path with the signed-in user's OIDC access token. Target URLs should not be reachable from the internet, or the backend should require a header that only the gateway adds. Server jobs can still call the same routes with `X-Api-Key`.
 
-The person who configures the gateway can register with email/password or use Google OIDC. Google uses the server-side authorization-code flow: management verifies Google's ID token, creates or links an admin by verified email, and redirects the browser with a two-minute, single-use code. The frontend exchanges that code for the same Gatekeeper JWT used by email/password login, then removes the code from the URL. Google secrets never reach the browser. Each account only sees the clients it created. The gateway's own pull of `/internal/snapshot` still uses the service key `X-Admin-Key`, which is not a user password. Admin Google OIDC (console login) and route OIDC (end-user tokens via JWKS) are separate features.
+Console identities: `PLATFORM_ADMIN` (Gatekeeper staff), `TENANT_ADMIN` (one operator per organization), and the gateway as a service using `X-Admin-Key` (not a user role). Public `/api/auth/register` is closed. The first platform admin is created from `GATEKEEPER_PLATFORM_EMAIL` / `GATEKEEPER_PLATFORM_PASSWORD` if none exists. Google OIDC only signs in an email that was already provisioned; it does not create organizations. Suspended or deleted orgs cannot log in, and their routes drop out of the gateway snapshot. The gateway's pull of `/internal/snapshot` still uses `X-Admin-Key`. Admin Google OIDC (console login) and route OIDC (end-user tokens via JWKS) are separate features.
 
-Register a backend, then call the gateway:
+Create an organization as the platform admin, then publish a tenant route:
 
 ```bash
+PLATFORM=$(curl -s -X POST http://localhost:8081/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"platform@gatekeeper.local","password":"platform-admin-change-me"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+
+curl -s -X POST http://localhost:8081/api/platform/organizations \
+  -H 'Content-Type: application/json' -H "Authorization: Bearer $PLATFORM" \
+  -d '{"name":"Foodfast","slug":"foodfast","adminName":"Priya","adminEmail":"priya@foodfast.com","adminPassword":"foodfast-pass"}'
+
 TOKEN=$(curl -s -X POST http://localhost:8081/api/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"your-password"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
+  -d '{"email":"priya@foodfast.com","password":"foodfast-pass"}' | sed -E 's/.*"token":"([^"]+)".*/\1/')
 
-curl -s -X POST http://localhost:8081/api/clients \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
-  -d '{"name":"shop","apiKey":"gk_shop","roles":["orders"]}'
+# GET /api/clients then POST a route on that client id with publicPath /order
+# stored as /foodfast/order
 
-# use the returned client id
-curl -s -X POST http://localhost:8081/api/clients/CLIENT_ID/routes \
-  -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
-  -d '{
-    "name": "shop",
-    "publicPath": "/shop",
-    "targetUrl": "https://httpbin.org",
-    "methods": ["GET", "POST"],
-    "authRequired": true,
-    "allowedRoles": ["orders"],
-    "rateLimit": 30,
-    "rateWindowSeconds": 60,
-    "idempotentPost": true,
-    "stripPrefix": true,
-    "requestHeaders": {"X-Source": "gatekeeper"},
-    "allowedOrigins": ["http://localhost:5173"],
-    "oidcIssuer": null,
-    "oidcAudience": null,
-    "requireUserJwt": false
-  }'
-
-curl -s http://localhost:8080/shop/get -H 'X-Api-Key: gk_shop'
+curl -s http://localhost:8080/foodfast/order
 curl -s http://localhost:8080/health/routes
 curl -s http://localhost:8082/api/summary -H 'X-Admin-Key: dev-admin-key'
 ```
 
-`GET /shop/get` is forwarded to `https://httpbin.org/get`. Wait a couple of seconds for the Kafka consumer before reading analytics. `GET /health/routes` shows how many routes are in memory. If it is `0`, management was down at startup; it retries every 30 seconds, or a config change pushes a refresh.
+The public path `/foodfast/order` is forwarded to the tenant's target. Wait a couple of seconds for the Kafka consumer before reading analytics. `GET /health/routes` shows how many routes are in memory. If it is `0`, management was down at startup; it retries every 30 seconds, or a config change pushes a refresh.
 
 ## Management API
 
-`/api/auth/register`, `/api/auth/login`, `/api/auth/options`, and the single-use `/api/auth/oidc/exchange` are open. Google login starts at `/oauth2/authorization/google` and returns through `/login/oauth2/code/google`. Other `/api/**` routes need `Authorization: Bearer <token>` and only see the caller's own clients. `/internal/**` needs the service key `X-Admin-Key`.
+`/api/auth/login`, `/api/auth/options`, and the single-use `/api/auth/oidc/exchange` are open. `/api/auth/register` returns 403. Google login starts at `/oauth2/authorization/google` and returns through `/login/oauth2/code/google`. Platform admins use `/api/platform/organizations`. Tenant admins use `/api/clients` for their org only. `/internal/**` needs the service key `X-Admin-Key`.
 
 - `POST /api/clients` body: `name`, optional `apiKey`, optional `roles`
 - `GET /api/clients` and `GET /api/clients/{id}`
@@ -203,7 +189,7 @@ Event JSON fields: `eventId`, `correlationId`, `clientId`, `routeId`, `method`, 
 ## What is intentionally simple
 
 - No shared Maven module. Contracts are duplicated records and the JSON fields above.
-- Admin login supports password credentials and optional Google OIDC. That does not automatically protect proxied routes. A route is browser-callable when it lists allowed origins and validates the caller's user token (OIDC issuer/JWKS, or the legacy HS256 secret).
+- Console login is invite-only. Password or Google OIDC works only for provisioned emails. That does not automatically protect proxied routes. A route is browser-callable when it lists allowed origins and validates the caller's user token.
 - OIDC one-time codes are held in management-process memory for two minutes. A multi-replica management deployment should move them to Redis.
 - Access events are attributed to the route owner's client, so the owner's dashboard shows calls made by other clients' keys too.
 - API keys are stored in plain text, the gateway cache is per process, and the proxy buffers the body.

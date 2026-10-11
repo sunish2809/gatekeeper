@@ -10,9 +10,12 @@ import com.project.gatekeeper.management.api.CatalogDtos.SnapshotResponse;
 import com.project.gatekeeper.management.api.CatalogDtos.UpsertRouteRequest;
 import com.project.gatekeeper.management.domain.AuditEntry;
 import com.project.gatekeeper.management.domain.ClientEntity;
+import com.project.gatekeeper.management.domain.OrganizationEntity;
+import com.project.gatekeeper.management.domain.OrganizationStatus;
 import com.project.gatekeeper.management.domain.RouteEntity;
 import com.project.gatekeeper.management.repo.AuditRepository;
 import com.project.gatekeeper.management.repo.ClientRepository;
+import com.project.gatekeeper.management.repo.OrganizationRepository;
 import com.project.gatekeeper.management.repo.RouteRepository;
 import com.project.gatekeeper.management.security.CurrentAdmin;
 import com.project.gatekeeper.management.support.Texts;
@@ -31,20 +34,24 @@ public class CatalogService {
     private final ClientRepository clients;
     private final RouteRepository routes;
     private final AuditRepository audits;
+    private final OrganizationRepository organizations;
     private final ApplicationEventPublisher events;
     private final CurrentAdmin currentAdmin;
 
     public CatalogService(ClientRepository clients, RouteRepository routes, AuditRepository audits,
-                          ApplicationEventPublisher events, CurrentAdmin currentAdmin) {
+                          OrganizationRepository organizations, ApplicationEventPublisher events,
+                          CurrentAdmin currentAdmin) {
         this.clients = clients;
         this.routes = routes;
         this.audits = audits;
+        this.organizations = organizations;
         this.events = events;
         this.currentAdmin = currentAdmin;
     }
 
     @Transactional
     public ClientResponse createClient(CreateClientRequest request) {
+        OrganizationEntity organization = currentAdmin.requireActiveOrganization();
         String apiKey = request.apiKey() == null || request.apiKey().isBlank()
                 ? "gk_" + UUID.randomUUID().toString().replace("-", "")
                 : request.apiKey().trim();
@@ -54,6 +61,7 @@ public class CatalogService {
         ClientEntity client = new ClientEntity();
         client.setId(UUID.randomUUID().toString());
         client.setAdminId(currentAdmin.id());
+        client.setOrganizationId(organization.getId());
         client.setName(request.name().trim());
         client.setApiKey(apiKey);
         client.setActive(true);
@@ -65,7 +73,8 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public List<ClientResponse> listClients() {
-        return clients.findByAdminId(currentAdmin.id()).stream().map(this::toClient).toList();
+        OrganizationEntity organization = currentAdmin.requireActiveOrganization();
+        return clients.findByOrganizationId(organization.getId()).stream().map(this::toClient).toList();
     }
 
     @Transactional(readOnly = true)
@@ -87,7 +96,7 @@ public class CatalogService {
         RouteEntity route = new RouteEntity();
         route.setId(UUID.randomUUID().toString());
         route.setClientId(clientId);
-        apply(route, request);
+        apply(route, request, currentAdmin.requireActiveOrganization());
         ensurePathAvailable(route.getPublicPath(), null);
         routes.save(route);
         events.publishEvent(new ConfigChanged(clientId, "route.created"));
@@ -103,7 +112,7 @@ public class CatalogService {
     @Transactional
     public RouteResponse updateRoute(String clientId, String routeId, UpsertRouteRequest request) {
         RouteEntity route = requireRoute(clientId, routeId);
-        apply(route, request);
+        apply(route, request, currentAdmin.requireActiveOrganization());
         ensurePathAvailable(route.getPublicPath(), route.getId());
         routes.save(route);
         events.publishEvent(new ConfigChanged(clientId, "route.updated"));
@@ -121,6 +130,7 @@ public class CatalogService {
     public SnapshotResponse snapshot() {
         List<ClientSnapshot> body = clients.findAll().stream()
                 .filter(ClientEntity::isActive)
+                .filter(this::organizationLive)
                 .map(client -> new ClientSnapshot(
                         client.getId(),
                         client.getName(),
@@ -138,19 +148,29 @@ public class CatalogService {
 
     @Transactional(readOnly = true)
     public List<AuditResponse> recentAudits() {
+        currentAdmin.requirePlatform();
         return audits.findTop50ByOrderByCreatedAtDesc().stream()
                 .map(this::toAudit)
                 .toList();
     }
 
-    private void apply(RouteEntity route, UpsertRouteRequest request) {
+    private boolean organizationLive(ClientEntity client) {
+        if (client.getOrganizationId() == null) {
+            return true;
+        }
+        return organizations.findById(client.getOrganizationId())
+                .map(org -> org.getStatus() == OrganizationStatus.ACTIVE)
+                .orElse(false);
+    }
+
+    private void apply(RouteEntity route, UpsertRouteRequest request, OrganizationEntity organization) {
         int timeoutMs = Texts.or(request.timeoutMs(), 5000);
         int rateWindow = Texts.or(request.rateWindowSeconds(), 60);
         if (timeoutMs < 1 || rateWindow < 1) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_route", "timeoutMs and rateWindowSeconds must be positive");
         }
         route.setName(request.name().trim());
-        route.setPublicPath(Texts.publicPath(request.publicPath()));
+        route.setPublicPath(Texts.orgPublicPath(organization.getSlug(), request.publicPath()));
         route.setTargetUrl(Texts.targetUrl(request.targetUrl()));
         route.setMethods(Texts.methods(request.methods()));
         route.setTimeoutMs(timeoutMs);
@@ -186,7 +206,8 @@ public class CatalogService {
     private ClientEntity requireClient(String id) {
         ClientEntity client = clients.findById(id).orElseThrow(() ->
                 new ApiException(HttpStatus.NOT_FOUND, "not_found", "Client not found"));
-        if (!currentAdmin.id().equals(client.getAdminId())) {
+        OrganizationEntity organization = currentAdmin.requireActiveOrganization();
+        if (client.getOrganizationId() == null || !organization.getId().equals(client.getOrganizationId())) {
             throw new ApiException(HttpStatus.NOT_FOUND, "not_found", "Client not found");
         }
         return client;
@@ -233,7 +254,8 @@ public class CatalogService {
                 Texts.split(route.getAllowedOrigins()),
                 route.getOidcIssuer(),
                 route.getOidcAudience(),
-                Texts.split(route.getRequiredScopes()));
+                Texts.split(route.getRequiredScopes()),
+                Texts.pathWithoutSlug(currentAdmin.requireActiveOrganization().getSlug(), route.getPublicPath()));
     }
 
     private RouteSnapshot toSnapshotRoute(RouteEntity route) {

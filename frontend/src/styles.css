@@ -931,6 +931,45 @@ pre {
 .auth-copy li { display: flex; align-items: center; gap: 11px; margin: 13px 0; color: #c9ddd4; font-size: 13px; }
 .auth-copy li i { width: 9px; height: 9px; border: 2px solid var(--leaf); border-radius: 50%; box-shadow: 0 0 0 4px rgba(103,225,143,.07); }
 .auth-foot { position: relative; z-index: 1; margin: 0; color: #749286; font-size: 11px; }
+.auth-link {
+  display: inline;
+  padding: 0;
+  min-height: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.auth-foot .auth-link { color: #9fd4b8; }
+.auth-card .field-help { margin-top: 16px; }
+
+.about-page { min-height: 100vh; background: var(--bg); }
+.about-nav {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 28px;
+  background: var(--forest);
+  color: #f4fff8;
+}
+.about-nav .brand-kicker { color: #9fd4b8; }
+.about-nav h1 { font-size: 18px; color: #f4fff8; }
+.about-main { width: min(1080px, 100%); margin: 0 auto; padding: 28px 20px 64px; }
+.about-hero { margin-bottom: 22px; }
+.about-hero h2 { font-size: clamp(28px, 4vw, 42px); margin: 0 0 12px; letter-spacing: -0.04em; }
+.about-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.about-list, .about-steps { margin: 0; padding-left: 18px; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.about-list li, .about-steps li { margin: 8px 0; }
+.about-contact { margin-top: 8px; }
+.about-contact h3, .about-grid h3 { margin: 0 0 10px; font-size: 20px; }
 
 .auth-form-wrap {
   display: grid;
@@ -1018,6 +1057,8 @@ pre {
   .auth-copy, .auth-foot { display: none; }
   .auth-form-wrap { min-height: calc(100vh - 88px); padding: 24px 16px; }
   .auth-card { padding: 24px; }
+  .about-grid { grid-template-columns: 1fr; }
+  .about-nav { padding: 12px 16px; }
   .guide-code-grid, .guide-steps { grid-template-columns: 1fr; }
   .architecture-flow { display: flex; flex-direction: column; }
   .architecture-flow .flow-node,

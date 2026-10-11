@@ -39,6 +39,8 @@ public class JwtService {
                 .subject(admin.getId())
                 .claim("email", admin.getEmail())
                 .claim("name", admin.getName())
+                .claim("role", admin.getRole() == null ? "PLATFORM_ADMIN" : admin.getRole().name())
+                .claim("organizationId", admin.getOrganizationId())
                 .issueTime(Date.from(now))
                 .expirationTime(Date.from(now.plusSeconds(ttlHours * 3600)))
                 .build();

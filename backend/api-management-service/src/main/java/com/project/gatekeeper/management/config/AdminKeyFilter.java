@@ -1,6 +1,12 @@
 package com.project.gatekeeper.management.config;
 
 import com.nimbusds.jwt.JWTClaimsSet;
+import com.project.gatekeeper.management.domain.AdminEntity;
+import com.project.gatekeeper.management.domain.AdminRole;
+import com.project.gatekeeper.management.domain.OrganizationEntity;
+import com.project.gatekeeper.management.domain.OrganizationStatus;
+import com.project.gatekeeper.management.repo.AdminRepository;
+import com.project.gatekeeper.management.repo.OrganizationRepository;
 import com.project.gatekeeper.management.security.CurrentAdmin;
 import com.project.gatekeeper.management.security.JwtService;
 import com.project.gatekeeper.management.web.ApiException;
@@ -26,10 +32,15 @@ public class AdminKeyFilter extends OncePerRequestFilter {
 
     private final String adminApiKey;
     private final JwtService jwt;
+    private final AdminRepository admins;
+    private final OrganizationRepository organizations;
 
-    public AdminKeyFilter(@Value("${gatekeeper.admin-api-key}") String adminApiKey, JwtService jwt) {
+    public AdminKeyFilter(@Value("${gatekeeper.admin-api-key}") String adminApiKey, JwtService jwt,
+                          AdminRepository admins, OrganizationRepository organizations) {
         this.adminApiKey = adminApiKey;
         this.jwt = jwt;
+        this.admins = admins;
+        this.organizations = organizations;
     }
 
     @Override
@@ -43,7 +54,11 @@ public class AdminKeyFilter extends OncePerRequestFilter {
                 || path.equals("/favicon.ico")
                 || path.equals("/health")
                 || path.startsWith("/health/")
-                || path.startsWith("/api/auth/")
+                || path.equals("/api/auth/options")
+                || path.equals("/api/auth/login")
+                || path.equals("/api/auth/register")
+                || path.equals("/api/auth/oidc/exchange")
+                || (path.equals("/api/inquiries") && "POST".equalsIgnoreCase(request.getMethod()))
                 || path.startsWith("/oauth2/")
                 || path.startsWith("/login/oauth2/")
                 || path.equals("/error");
@@ -67,7 +82,21 @@ public class AdminKeyFilter extends OncePerRequestFilter {
         }
         try {
             JWTClaimsSet claims = jwt.parse(header.substring("Bearer ".length()).trim());
-            CurrentAdmin.set(request, claims.getSubject());
+            AdminEntity admin = admins.findById(claims.getSubject()).orElse(null);
+            if (admin == null) {
+                writeUnauthorized(response, "Login again");
+                return;
+            }
+            if (admin.getRole() == AdminRole.TENANT_ADMIN) {
+                OrganizationEntity organization = admin.getOrganizationId() == null
+                        ? null
+                        : organizations.findById(admin.getOrganizationId()).orElse(null);
+                if (organization == null || organization.getStatus() != OrganizationStatus.ACTIVE) {
+                    writeForbidden(response, "This organization is suspended");
+                    return;
+                }
+            }
+            CurrentAdmin.set(request, admin);
             filterChain.doFilter(request, response);
         } catch (ApiException ex) {
             writeUnauthorized(response, ex.getMessage());
@@ -85,5 +114,12 @@ public class AdminKeyFilter extends OncePerRequestFilter {
         response.setContentType("application/json");
         String safe = message == null ? "Login again" : message.replace("\"", "'");
         response.getWriter().write("{\"error\":\"unauthorized\",\"message\":\"" + safe + "\"}");
+    }
+
+    private void writeForbidden(HttpServletResponse response, String message) throws IOException {
+        response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+        response.setContentType("application/json");
+        String safe = message == null ? "Forbidden" : message.replace("\"", "'");
+        response.getWriter().write("{\"error\":\"org_inactive\",\"message\":\"" + safe + "\"}");
     }
 }

@@ -20,6 +20,15 @@ class TextsTest {
     }
 
     @Test
+    void prefixesOrgSlugOnPublicPath() {
+        assertEquals("foodfast", Texts.slug("FoodFast"));
+        assertEquals("/foodfast/order", Texts.orgPublicPath("foodfast", "/order"));
+        assertEquals("/foodfast/order", Texts.orgPublicPath("foodfast", "/foodfast/order"));
+        assertEquals("/order", Texts.pathWithoutSlug("foodfast", "/foodfast/order"));
+        assertThrows(ApiException.class, () -> Texts.slug("api"));
+    }
+
+    @Test
     void rejectsBadTarget() {
         assertThrows(ApiException.class, () -> Texts.targetUrl("ftp://example.com"));
     }

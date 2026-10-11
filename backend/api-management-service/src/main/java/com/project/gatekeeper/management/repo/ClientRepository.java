@@ -10,6 +10,8 @@ public interface ClientRepository extends JpaRepository<ClientEntity, String> {
 
     List<ClientEntity> findByAdminId(String adminId);
 
+    List<ClientEntity> findByOrganizationId(String organizationId);
+
     Optional<ClientEntity> findByApiKey(String apiKey);
 
     boolean existsByApiKey(String apiKey);

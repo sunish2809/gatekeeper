@@ -16,6 +16,48 @@ public final class Texts {
     private Texts() {
     }
 
+    public static String slug(String raw) {
+        if (raw == null || raw.isBlank()) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_slug", "slug is required");
+        }
+        String value = raw.trim().toLowerCase(Locale.ROOT);
+        if (!value.matches("[a-z][a-z0-9-]{1,31}")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_slug",
+                    "slug must start with a letter and use only lowercase letters, numbers, and hyphens");
+        }
+        if (value.contains("--") || value.endsWith("-")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_slug", "slug cannot start or end with stacked hyphens");
+        }
+        if (value.equals("api") || value.equals("health") || value.equals("internal") || value.equals("admin")
+                || value.equals("platform") || value.equals("login")) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_slug", "slug is reserved");
+        }
+        return value;
+    }
+
+    public static String orgPublicPath(String slug, String raw) {
+        String relative = publicPath(raw);
+        String prefix = "/" + slug;
+        if (relative.equals(prefix) || relative.startsWith(prefix + "/")) {
+            return relative;
+        }
+        return relative.equals("/") ? prefix : prefix + relative;
+    }
+
+    public static String pathWithoutSlug(String slug, String publicPath) {
+        if (publicPath == null) {
+            return "/";
+        }
+        String prefix = "/" + slug;
+        if (publicPath.equals(prefix)) {
+            return "/";
+        }
+        if (publicPath.startsWith(prefix + "/")) {
+            return publicPath.substring(prefix.length());
+        }
+        return publicPath;
+    }
+
     public static String publicPath(String raw) {
         if (raw == null || raw.isBlank()) {
             throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_path", "publicPath is required");

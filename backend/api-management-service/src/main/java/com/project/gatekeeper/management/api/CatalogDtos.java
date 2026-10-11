@@ -70,7 +70,8 @@ public final class CatalogDtos {
             List<String> allowedOrigins,
             String oidcIssuer,
             String oidcAudience,
-            List<String> requiredScopes
+            List<String> requiredScopes,
+            String relativePath
     ) {
     }
 

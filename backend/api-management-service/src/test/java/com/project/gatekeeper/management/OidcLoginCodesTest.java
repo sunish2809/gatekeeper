@@ -14,7 +14,8 @@ class OidcLoginCodesTest {
     @Test
     void codeCanOnlyBeConsumedOnce() {
         OidcLoginCodes codes = new OidcLoginCodes();
-        AuthResult expected = new AuthResult("jwt", new AdminView("id", "Ada", "ada@example.com"));
+        AuthResult expected = new AuthResult("jwt",
+                new AdminView("id", "Ada", "ada@example.com", "PLATFORM_ADMIN", null, null, null, null));
 
         String code = codes.issue(expected);
 

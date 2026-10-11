@@ -3,6 +3,7 @@ import { createApi } from "./api.js";
 import AuthScreen from "./AuthScreen.jsx";
 import Dashboard from "./Dashboard.jsx";
 import IntegrationGuide from "./IntegrationGuide.jsx";
+import PlatformConsole from "./PlatformConsole.jsx";
 
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("gk.token") || "");
@@ -19,7 +20,6 @@ export default function App() {
   const [routes, setRoutes] = useState([]);
   const [error, setError] = useState("");
   const [routeForm, setRouteForm] = useState(emptyRoute);
-  const [clientName, setClientName] = useState("");
   const [call, setCall] = useState({
     method: "GET",
     path: "",
@@ -31,7 +31,6 @@ export default function App() {
   const [result, setResult] = useState("The gateway response will show here.");
   const [meta, setMeta] = useState("");
   const [overview, setOverview] = useState(null);
-  const [audits, setAudits] = useState([]);
   const [editingRouteId, setEditingRouteId] = useState(null);
   const [sending, setSending] = useState(false);
 
@@ -50,21 +49,20 @@ export default function App() {
   }, [run]);
 
   const refresh = useCallback(async () => {
-    const [nextStatus, nextClients, nextAudits] = await Promise.all([
+    const [nextStatus, nextClients] = await Promise.all([
       run("/api/console/status"),
-      run("/api/clients"),
-      run("/api/audit")
+      run("/api/clients")
     ]);
     setStatus(nextStatus);
     setClients(nextClients);
-    setAudits(nextAudits);
     const stillThere = nextClients.some((client) => client.id === selectedId);
-    const nextId = stillThere ? selectedId : null;
-    if (!stillThere) {
-      setSelectedId(null);
-    }
+    const nextId = stillThere ? selectedId : nextClients[0]?.id || null;
+    setSelectedId(nextId);
     if (nextId) {
       await loadRoutes(nextId);
+      setOverview(await run(`/api/console/overview?clientId=${encodeURIComponent(nextId)}`));
+    } else {
+      setRoutes([]);
     }
   }, [loadRoutes, run, selectedId]);
 
@@ -72,8 +70,20 @@ export default function App() {
     if (!token) {
       return;
     }
+    run("/api/auth/me")
+      .then((result) => {
+        localStorage.setItem("gk.admin", JSON.stringify(result.admin));
+        setAdmin(result.admin);
+      })
+      .catch((err) => setError(err.message));
+  }, [run, token]);
+
+  useEffect(() => {
+    if (!token || !admin?.role || admin.role === "PLATFORM_ADMIN") {
+      return;
+    }
     refresh().catch((err) => setError(err.message));
-  }, [refresh, token]);
+  }, [admin?.role, refresh, token]);
 
   function enter(nextToken, nextAdmin) {
     localStorage.setItem("gk.token", nextToken);
@@ -87,53 +97,6 @@ export default function App() {
     localStorage.removeItem("gk.admin");
     setToken("");
     setAdmin(null);
-  }
-
-  async function selectClient(client) {
-    setError("");
-    setSelectedId(client.id);
-    setEditingRouteId(null);
-    setRouteForm(emptyRoute());
-    try {
-      await loadRoutes(client.id);
-      setOverview(await run(`/api/console/overview?clientId=${encodeURIComponent(client.id)}`));
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function removeClient(client) {
-    if (!window.confirm(`Delete ${client.name} and its routes?`)) {
-      return;
-    }
-    setError("");
-    try {
-      await run(`/api/clients/${client.id}`, { method: "DELETE" });
-      if (selectedId === client.id) {
-        setSelectedId(null);
-        setRoutes([]);
-        setOverview(null);
-      }
-      await refresh();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function createClientRecord() {
-    setError("");
-    try {
-      const created = await run("/api/clients", {
-        method: "POST",
-        body: JSON.stringify({ name: clientName })
-      });
-      setClientName("");
-      await refresh();
-      setSelectedId(created.id);
-      setRoutes(await run(`/api/clients/${created.id}/routes`));
-    } catch (err) {
-      setError(err.message);
-    }
   }
 
   async function saveRoute() {
@@ -154,20 +117,25 @@ export default function App() {
         stripPrefix: routeForm.stripPrefix,
         idempotentPost: routeForm.idempotentPost,
         requireUserJwt: routeForm.requireUserJwt,
+        timeoutMs: Number(routeForm.timeoutMs || "5000"),
         rateLimit: Number(routeForm.rateLimit || "60"),
         rateWindowSeconds: 60,
-        requestHeaders: { "X-Source": "gatekeeper" },
+        requestHeaders: parseHeaders(routeForm.requestHeaders),
         allowedOrigins: splitList(routeForm.allowedOrigins),
         oidcIssuer: routeForm.oidcIssuer.trim() || null,
         oidcAudience: routeForm.oidcAudience.trim() || null,
-        requiredScopes: splitList(routeForm.requiredScopes)
+        requiredScopes: []
       };
       if (editingRouteId) {
         await run(`/api/clients/${selected.id}/routes/${editingRouteId}`, { method: "PUT", body: JSON.stringify(body) });
       } else {
         await run(`/api/clients/${selected.id}/routes`, { method: "POST", body: JSON.stringify(body) });
       }
-      setCall((current) => ({ ...current, path: savedPath }));
+      const slug = admin?.organizationSlug;
+      const livePath = slug && !savedPath.startsWith(`/${slug}`)
+        ? `/${slug}${savedPath.startsWith("/") ? savedPath : `/${savedPath}`}`
+        : savedPath;
+      setCall((current) => ({ ...current, path: livePath }));
       setEditingRouteId(null);
       setRouteForm(emptyRoute());
       await refresh();
@@ -200,17 +168,18 @@ export default function App() {
     setEditingRouteId(route.id);
     setRouteForm({
       name: route.name,
-      publicPath: route.publicPath,
+      publicPath: route.relativePath || route.publicPath,
       targetUrl: route.targetUrl,
       methods: (route.methods || []).join(","),
       rateLimit: String(route.rateLimit),
+      timeoutMs: String(route.timeoutMs || 5000),
       stripPrefix: route.stripPrefix,
       idempotentPost: route.idempotentPost,
       requireUserJwt: !!route.requireUserJwt,
       allowedOrigins: (route.allowedOrigins || []).join(", "),
       oidcIssuer: route.oidcIssuer || "",
       oidcAudience: route.oidcAudience || "",
-      requiredScopes: (route.requiredScopes || []).join(", ")
+      requestHeaders: formatHeaders(route.requestHeaders)
     });
   }
 
@@ -249,6 +218,10 @@ export default function App() {
     return <AuthScreen onSuccess={enter} />;
   }
 
+  if (admin?.role === "PLATFORM_ADMIN") {
+    return <PlatformConsole token={token} admin={admin} onLogout={logout} />;
+  }
+
   return (
     <div className="shell">
       <header>
@@ -263,7 +236,7 @@ export default function App() {
           <span className="avatar" aria-hidden="true">{(admin?.name || "A").slice(0, 1).toUpperCase()}</span>
           <div className="account-copy">
             <strong>{admin?.name || "Account"}</strong>
-            <span className="muted">{admin?.email}</span>
+            <span className="muted">{admin?.email}{admin?.organizationName ? ` · ${admin.organizationName}` : ""}</span>
           </div>
           <button type="button" className="secondary" onClick={logout}>Log out</button>
         </div>
@@ -274,7 +247,9 @@ export default function App() {
           <div>
             <p className="eyebrow">API operations</p>
             <h2>Gateway overview</h2>
-            <p className="lede">Configure clients, publish routes, and inspect traffic from one secure workspace.</p>
+            <p className="lede">{admin?.organizationSlug
+              ? `Routes for ${admin.organizationName} are published under /${admin.organizationSlug}.`
+              : "Publish routes for your organization."}</p>
           </div>
           <div className="legend">
             <StatusPill name="Management" check={status?.management} />
@@ -284,48 +259,20 @@ export default function App() {
           </div>
         </section>
         <section className="steps">
-          <div><strong>01</strong><span>Register an application</span><small>Give your SaaS app a name so its routes live together.</small></div>
-          <div><strong>02</strong><span>Publish a route</span><small>Map a public gateway path to a private backend URL.</small></div>
+          <div><strong>01</strong><span>Publish a route</span><small>Map /order to your private order service. Gatekeeper stores /{admin?.organizationSlug || "org"}/order.</small></div>
+          <div><strong>02</strong><span>Protect it</span><small>Your website origin and the login provider that already signs in your users.</small></div>
           <div><strong>03</strong><span>Point the UI at Gatekeeper</span><small>The browser calls the gateway with a user token; backends stay private.</small></div>
           <div><strong>04</strong><span>Observe traffic</span><small>Track volume, latency, failures, and throttled calls.</small></div>
         </section>
 
         <IntegrationGuide />
 
-        <div className="grid">
-          <section className="card">
-            <div className="card-head">
-              <div>
-                <p className="eyebrow">Applications</p>
-                <h2>Applications</h2>
-                <p className="muted">One application holds the routes for your SaaS UI.</p>
-              </div>
-              <span className="count-badge">{clients.length}</span>
-            </div>
-            <label htmlFor="clientName">Application name</label>
-            <input id="clientName" value={clientName} placeholder="Acme Commerce — Production" onChange={(event) => setClientName(event.target.value)} />
-            <div className="actions">
-              <button type="button" onClick={createClientRecord}>Create application</button>
-            </div>
-            <div className="list">
-              {clients.length === 0 ? <div className="empty-state"><strong>No applications yet</strong><span>Create your SaaS app above, then add routes.</span></div> : clients.map((client) => (
-                <div key={client.id} className={client.id === selectedId ? "item selected" : "item"}>
-                  <button type="button" className="item-main" onClick={() => selectClient(client)}>
-                    <span className="item-title"><i className="client-dot" />{client.name}</span>
-                    <small>Click to add pay, report, or other routes</small>
-                  </button>
-                  <button type="button" className="text-danger" onClick={() => removeClient(client)}>Delete</button>
-                </div>
-              ))}
-            </div>
-          </section>
-
-          <section className="card">
+        <section className="card">
             <div className="card-head">
               <div>
                 <p className="eyebrow">Routing</p>
                 <h2>Routes & policies</h2>
-                <p className="muted">{selected ? `Configuring ${selected.name}. Changes are published immediately.` : "Select a client, then connect a gateway path to its backend."}</p>
+                <p className="muted">{selected ? `Live path prefix /${admin?.organizationSlug || ""}. Changes publish immediately.` : "Your organization workspace is loading."}</p>
               </div>
               <span className="count-badge">{routes.length}</span>
             </div>
@@ -336,12 +283,12 @@ export default function App() {
               </div>
               <div>
                 <label htmlFor="publicPath">Public path</label>
-                <input id="publicPath" value={routeForm.publicPath} placeholder="/v1/orders" onChange={(event) => setRouteForm({ ...routeForm, publicPath: event.target.value })} />
+                <input id="publicPath" value={routeForm.publicPath} placeholder="/order" onChange={(event) => setRouteForm({ ...routeForm, publicPath: event.target.value })} />
               </div>
             </div>
             <label htmlFor="targetUrl">Target URL</label>
             <input id="targetUrl" value={routeForm.targetUrl} placeholder="https://orders.internal.acme.com" onChange={(event) => setRouteForm({ ...routeForm, targetUrl: event.target.value })} />
-            <p className="field-help">Private service address. Browsers call the gateway path, not this URL.</p>
+            <p className="field-help">Private service address. Callers use /{admin?.organizationSlug || "org"}{routeForm.publicPath || "/order"}.</p>
             <div className="row">
               <div>
                 <label htmlFor="methods">Methods</label>
@@ -350,6 +297,12 @@ export default function App() {
               <div>
                 <label htmlFor="rateLimit">Rate limit / minute</label>
                 <input id="rateLimit" type="number" min="0" value={routeForm.rateLimit} placeholder="60" onChange={(event) => setRouteForm({ ...routeForm, rateLimit: event.target.value })} />
+              </div>
+            </div>
+            <div className="row">
+              <div>
+                <label htmlFor="timeoutMs">Timeout (ms)</label>
+                <input id="timeoutMs" type="number" min="1" value={routeForm.timeoutMs} placeholder="5000" onChange={(event) => setRouteForm({ ...routeForm, timeoutMs: event.target.value })} />
               </div>
             </div>
             <label htmlFor="allowedOrigins">Allowed browser origins</label>
@@ -365,9 +318,10 @@ export default function App() {
                 <input id="oidcAudience" value={routeForm.oidcAudience} placeholder="your-app-client-id" onChange={(event) => setRouteForm({ ...routeForm, oidcAudience: event.target.value })} />
               </div>
             </div>
-            <label htmlFor="requiredScopes">Required scopes</label>
-            <input id="requiredScopes" value={routeForm.requiredScopes} placeholder="openid, email" onChange={(event) => setRouteForm({ ...routeForm, requiredScopes: event.target.value })} />
             <p className="field-help">From the same login provider your UI already uses. The gateway checks the user token; it does not log the user in.</p>
+            <label htmlFor="requestHeaders">Header rules added to the backend</label>
+            <textarea id="requestHeaders" value={routeForm.requestHeaders} placeholder={"X-Source=gatekeeper"} onChange={(event) => setRouteForm({ ...routeForm, requestHeaders: event.target.value })} />
+            <p className="field-help">One Name=value per line. Your service can require these so only Gatekeeper traffic is accepted.</p>
             <div className="checks">
               <label><input type="checkbox" checked={routeForm.stripPrefix} onChange={(event) => setRouteForm({ ...routeForm, stripPrefix: event.target.checked })} /> Strip prefix</label>
               <label><input type="checkbox" checked={routeForm.idempotentPost} onChange={(event) => setRouteForm({ ...routeForm, idempotentPost: event.target.checked })} /> Idempotent POST</label>
@@ -378,7 +332,7 @@ export default function App() {
               {editingRouteId ? <button type="button" className="secondary" onClick={() => { setEditingRouteId(null); setRouteForm(emptyRoute()); }}>Cancel</button> : null}
             </div>
             <div className="list">
-              {selected && routes.length === 0 ? <div className="empty-state"><strong>No routes published</strong><span>Add the first route for {selected.name}.</span></div> : routes.map((route) => (
+              {!selected ? <div className="empty-state"><strong>Workspace not ready</strong><span>Ask a Gatekeeper administrator to provision this organization.</span></div> : selected && routes.length === 0 ? <div className="empty-state"><strong>No routes published</strong><span>Add /order or /pay for {admin?.organizationName || selected.name}.</span></div> : routes.map((route) => (
                 <div key={route.id} className="item">
                   <button type="button" className="item-main" onClick={() => editRoute(route)}>
                     <span className="item-title"><span className="method-tag">{route.methods?.[0] || "ANY"}</span>{route.publicPath}</span>
@@ -389,8 +343,7 @@ export default function App() {
                 </div>
               ))}
             </div>
-          </section>
-        </div>
+        </section>
 
         <section className="card request-lab">
           <div className="card-head">
@@ -410,7 +363,7 @@ export default function App() {
             </div>
             <div>
               <label htmlFor="tryPath">Gateway path</label>
-              <input id="tryPath" value={call.path} placeholder="/v1/orders/ord_12345" onChange={(event) => setCall({ ...call, path: event.target.value })} />
+              <input id="tryPath" value={call.path} placeholder={admin?.organizationSlug ? `/${admin.organizationSlug}/order` : "/foodfast/order"} onChange={(event) => setCall({ ...call, path: event.target.value })} />
             </div>
           </div>
           <div className="row">
@@ -437,40 +390,18 @@ export default function App() {
           </div>
         </section>
 
-        <Dashboard
-          clientName={selected?.name}
-          overview={overview}
-          onRefresh={() => {
-            if (!selectedId) return;
-            run(`/api/console/overview?clientId=${encodeURIComponent(selectedId)}`)
-              .then(setOverview)
-              .catch((err) => setError(err.message));
-          }}
-        />
-
-        <section className="card">
-          <div className="card-head">
-            <div>
-              <p className="eyebrow">Governance</p>
-              <h2>Administrative activity</h2>
-              <p className="muted">Recent configuration changes made in this account.</p>
-            </div>
-          </div>
-          {audits.length === 0 ? <p className="muted">No admin writes yet.</p> : (
-            <table className="calls">
-              <thead><tr><th>When</th><th>Action</th><th>Path</th></tr></thead>
-              <tbody>
-                {audits.slice(0, 12).map((entry) => (
-                  <tr key={entry.id}>
-                    <td>{entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ""}</td>
-                    <td>{entry.action}</td>
-                    <td>{entry.path}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </section>
+        {selected ? (
+          <Dashboard
+            clientName={selected?.name}
+            overview={overview}
+            onRefresh={() => {
+              if (!selectedId) return;
+              run(`/api/console/overview?clientId=${encodeURIComponent(selectedId)}`)
+                .then(setOverview)
+                .catch((err) => setError(err.message));
+            }}
+          />
+        ) : null}
       </main>
     </div>
   );
@@ -480,6 +411,29 @@ function splitList(value) {
   return (value || "").split(",").map((item) => item.trim()).filter(Boolean);
 }
 
+function parseHeaders(raw) {
+  const headers = {};
+  for (const line of (raw || "").split("\n")) {
+    const split = line.indexOf("=");
+    if (split <= 0) {
+      continue;
+    }
+    const name = line.slice(0, split).trim();
+    if (name) {
+      headers[name] = line.slice(split + 1);
+    }
+  }
+  return headers;
+}
+
+function formatHeaders(headers) {
+  if (!headers || typeof headers !== "object") {
+    return "X-Source=gatekeeper";
+  }
+  const lines = Object.entries(headers).map(([name, value]) => `${name}=${value ?? ""}`);
+  return lines.length ? lines.join("\n") : "X-Source=gatekeeper";
+}
+
 function emptyRoute() {
   return {
     name: "",
@@ -487,13 +441,14 @@ function emptyRoute() {
     targetUrl: "",
     methods: "GET,POST",
     rateLimit: "60",
+    timeoutMs: "5000",
     stripPrefix: true,
     idempotentPost: false,
     requireUserJwt: true,
     allowedOrigins: "",
     oidcIssuer: "",
     oidcAudience: "",
-    requiredScopes: ""
+    requestHeaders: "X-Source=gatekeeper"
   };
 }
 

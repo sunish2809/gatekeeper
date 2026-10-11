@@ -63,6 +63,9 @@ GATEKEEPER_JWT_SECRET=${{shared.GATEKEEPER_JWT_SECRET}}
 GATEKEEPER_GATEWAY_URL=https://${{gateway.RAILWAY_PUBLIC_DOMAIN}}
 GATEKEEPER_ANALYTICS_URL=http://${{analytics.RAILWAY_PRIVATE_DOMAIN}}:8082
 GATEKEEPER_FRONTEND_ORIGIN=https://${{frontend.RAILWAY_PUBLIC_DOMAIN}}
+GATEKEEPER_PLATFORM_EMAIL=<your operator email>
+GATEKEEPER_PLATFORM_PASSWORD=<at least 8 characters>
+GATEKEEPER_PLATFORM_NAME=Platform Admin
 GATEKEEPER_OIDC_ENABLED=true
 GOOGLE_OIDC_CLIENT_ID=<client ID from Google Cloud>
 GOOGLE_OIDC_CLIENT_SECRET=<rotated client secret from Google Cloud>
@@ -138,10 +141,10 @@ curl https://<gateway-domain>/health
 curl https://<gateway-domain>/health/routes
 ```
 
-Then open `https://<frontend-domain>`, register an account, create a client, and add a route. Production targets should be private Railway URLs or otherwise unreachable from the public internet. `https://httpbin.org` is only a smoke-test target. Example: public path `/bin`, target `https://httpbin.org`, strip prefix on, then:
+Then open `https://<frontend-domain>` as the platform admin (`GATEKEEPER_PLATFORM_EMAIL`), create an organization and tenant admin, sign in as that tenant, and add a route. Production targets should be private Railway URLs or otherwise unreachable from the public internet. `https://httpbin.org` is only a smoke-test target. Example: slug `demo`, public path `/bin` (stored as `/demo/bin`), target `https://httpbin.org`, strip prefix on, then:
 
 ```bash
-curl https://<gateway-domain>/bin/get -H 'X-Api-Key: <client api key>'
+curl https://<gateway-domain>/demo/bin/get
 ```
 
 The dashboard should show the call within a few seconds. If it does not, check `analytics` logs for Kafka or Mongo errors.
