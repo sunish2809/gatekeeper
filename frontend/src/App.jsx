@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { createApi } from "./api.js";
+import AboutPage from "./AboutPage.jsx";
 import AuthScreen from "./AuthScreen.jsx";
 import Dashboard from "./Dashboard.jsx";
 import IntegrationGuide from "./IntegrationGuide.jsx";
+import { go, usePath } from "./nav.js";
 import PlatformConsole from "./PlatformConsole.jsx";
 
 export default function App() {
@@ -33,6 +35,7 @@ export default function App() {
   const [overview, setOverview] = useState(null);
   const [editingRouteId, setEditingRouteId] = useState(null);
   const [sending, setSending] = useState(false);
+  const path = usePath();
 
   const selected = clients.find((client) => client.id === selectedId) || null;
 
@@ -90,13 +93,16 @@ export default function App() {
     localStorage.setItem("gk.admin", JSON.stringify(nextAdmin));
     setToken(nextToken);
     setAdmin(nextAdmin);
+    go(nextAdmin?.role === "PLATFORM_ADMIN" ? "/admin" : "/login");
   }
 
   function logout() {
+    const dest = admin?.role === "PLATFORM_ADMIN" ? "/admin" : "/login";
     localStorage.removeItem("gk.token");
     localStorage.removeItem("gk.admin");
     setToken("");
     setAdmin(null);
+    go(dest);
   }
 
   async function saveRoute() {
@@ -215,7 +221,15 @@ export default function App() {
   }
 
   if (!token) {
-    return <AuthScreen onSuccess={enter} />;
+    const params = new URLSearchParams(window.location.search);
+    const oidcReturn = params.has("oidc_code") || params.has("oidc_error");
+    const portal = oidcReturn
+      ? (sessionStorage.getItem("gk.portal") === "platform" ? "platform" : "tenant")
+      : path === "/admin" ? "platform" : path === "/login" ? "tenant" : null;
+    if (portal) {
+      return <AuthScreen portal={portal} onSuccess={enter} />;
+    }
+    return <AboutPage />;
   }
 
   if (admin?.role === "PLATFORM_ADMIN") {
@@ -228,8 +242,8 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">G</span>
           <div>
-            <span className="brand-kicker">Gatekeeper Cloud</span>
-            <h1>Control plane</h1>
+            <span className="brand-kicker">Organization console</span>
+            <h1>{admin?.organizationName || "SaaS administrator"}</h1>
           </div>
         </div>
         <div className="account">

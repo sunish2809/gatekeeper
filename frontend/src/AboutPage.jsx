@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { publicApi, publicGet } from "./api.js";
+import { go } from "./nav.js";
 
-export default function AboutPage({ onSignIn }) {
+export default function AboutPage() {
   const [contactEmail, setContactEmail] = useState("");
   const [form, setForm] = useState({ name: "", company: "", email: "", website: "", message: "" });
   const [error, setError] = useState("");
@@ -38,7 +39,10 @@ export default function AboutPage({ onSignIn }) {
             <h1>API gateway for SaaS teams</h1>
           </div>
         </div>
-        <button type="button" className="secondary" onClick={onSignIn}>Sign in</button>
+        <div className="about-nav-actions">
+          <button type="button" className="secondary" onClick={() => go("/admin")}>Platform admin</button>
+          <button type="button" onClick={() => go("/login")}>SaaS administrator</button>
+        </div>
       </header>
 
       <main className="about-main">
@@ -140,7 +144,7 @@ export default function AboutPage({ onSignIn }) {
               <textarea id="inqMessage" value={form.message} required placeholder="We have a customer UI and private pay/report services. We want Gatekeeper in front of them." onChange={(event) => setForm({ ...form, message: event.target.value })} />
               <div className="actions">
                 <button type="submit" disabled={busy}>{busy ? "Sending…" : "Send request"}</button>
-                <button type="button" className="secondary" onClick={onSignIn}>Already have an account</button>
+                <button type="button" className="secondary" onClick={() => go("/login")}>SaaS administrator sign in</button>
               </div>
             </form>
           )}

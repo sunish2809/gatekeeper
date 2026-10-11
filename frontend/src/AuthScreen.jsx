@@ -1,47 +1,63 @@
 import { useEffect, useRef, useState } from "react";
 import { oidcLoginUrl, publicApi, publicGet } from "./api.js";
-import AboutPage from "./AboutPage.jsx";
+import { go } from "./nav.js";
 
-export default function AuthScreen({ onSuccess }) {
+export default function AuthScreen({ portal, onSuccess }) {
+  const platform = portal === "platform";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => sessionStorage.getItem("gk.authError") || "");
   const [busy, setBusy] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
-  const [view, setView] = useState("login");
   const oidcHandled = useRef(false);
 
   useEffect(() => {
     publicGet("/api/auth/options")
       .then((options) => setGoogleEnabled(!!options.googleOidcEnabled))
       .catch(() => setGoogleEnabled(false));
+    const storedError = sessionStorage.getItem("gk.authError");
+    if (storedError) {
+      sessionStorage.removeItem("gk.authError");
+      setError(storedError);
+    }
 
     if (oidcHandled.current) return;
     oidcHandled.current = true;
     const params = new URLSearchParams(window.location.search);
     const code = params.get("oidc_code");
     const oidcError = params.get("oidc_error");
+    const intended = sessionStorage.getItem("gk.portal") || portal;
     if (!code && !oidcError) return;
 
-    window.history.replaceState({}, document.title, window.location.pathname);
     if (oidcError) {
-      setError(oidcError);
+      sessionStorage.setItem("gk.authError", oidcError);
+      go(platform ? "/admin" : "/login");
       return;
     }
     setBusy(true);
     publicApi("/api/auth/oidc/exchange", { code })
-      .then((result) => onSuccess(result.token, result.admin))
-      .catch((err) => setError(err.message))
+      .then((result) => finish(result, intended, onSuccess, (message) => {
+        sessionStorage.setItem("gk.authError", message);
+        go(platform ? "/admin" : "/login");
+      }))
+      .catch((err) => {
+        sessionStorage.setItem("gk.authError", err.message);
+        go(platform ? "/admin" : "/login");
+      })
       .finally(() => setBusy(false));
-  }, [onSuccess]);
+  }, [onSuccess, platform, portal]);
 
   async function submit(event) {
     event.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const result = await publicApi("/api/auth/login", { email, password });
-      onSuccess(result.token, result.admin);
+      const result = await publicApi("/api/auth/login", {
+        email,
+        password,
+        portal: platform ? "PLATFORM" : "TENANT"
+      });
+      finish(result, portal, onSuccess, setError);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -49,38 +65,39 @@ export default function AuthScreen({ onSuccess }) {
     }
   }
 
-  if (view === "about") {
-    return <AboutPage onSignIn={() => setView("login")} />;
-  }
+  const copy = platform ? platformCopy : tenantCopy;
 
   return (
     <div className="auth-shell">
       <section className="auth-story">
         <div className="auth-brand"><span className="brand-mark">G</span><strong>Gatekeeper</strong></div>
         <div className="auth-copy">
-          <p className="eyebrow">Your API control plane</p>
-          <h1>Access is provisioned, not self-serve.</h1>
-          <p>Organizations join after review. A Gatekeeper administrator creates the workspace. You sign in and publish routes.</p>
+          <p className="eyebrow">{copy.eyebrow}</p>
+          <h1>{copy.headline}</h1>
+          <p>{copy.story}</p>
           <ul>
-            <li><i />One slug per tenant, so /foodfast/order never collides with /quick/order</li>
-            <li><i />Tenant admins manage only their organization</li>
-            <li><i />The gateway reads live config with a service key, not a user login</li>
+            {copy.points.map((point) => <li key={point}><i />{point}</li>)}
           </ul>
         </div>
-        <p className="auth-foot">
-          No public signup.{" "}
-          <button type="button" className="auth-link" onClick={() => setView("about")}>Read how it works and request access</button>
-        </p>
+        <p className="auth-foot">{copy.foot}</p>
       </section>
       <section className="auth-form-wrap">
         <form className="auth-card" onSubmit={submit}>
-          <p className="eyebrow">Welcome back</p>
-          <h2>Sign in to Gatekeeper</h2>
-          <p className="lede">Use the email a Gatekeeper administrator created for you.</p>
+          <p className="eyebrow">{copy.formEyebrow}</p>
+          <h2>{copy.formTitle}</h2>
+          <p className="lede">{copy.lede}</p>
           {error ? <div className="banner">{error}</div> : null}
           {googleEnabled ? (
             <>
-              <button type="button" className="google-button" disabled={busy} onClick={() => window.location.assign(oidcLoginUrl("google"))}>
+              <button
+                type="button"
+                className="google-button"
+                disabled={busy}
+                onClick={() => {
+                  sessionStorage.setItem("gk.portal", portal);
+                  window.location.assign(oidcLoginUrl("google"));
+                }}
+              >
                 <GoogleIcon />
                 Continue with Google
               </button>
@@ -88,15 +105,94 @@ export default function AuthScreen({ onSuccess }) {
             </>
           ) : null}
           <label htmlFor="email">Work email</label>
-          <input id="email" type="email" value={email} placeholder="priya@foodfast.com" autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
+          <input
+            id="email"
+            type="email"
+            value={email}
+            placeholder={copy.emailPlaceholder}
+            autoComplete="email"
+            onChange={(event) => setEmail(event.target.value)}
+            required
+          />
           <label htmlFor="password">Password</label>
-          <input id="password" type="password" value={password} placeholder="Enter your password" autoComplete="current-password" onChange={(event) => setPassword(event.target.value)} required />
-          <button type="submit" disabled={busy}>{busy ? "Please wait…" : "Sign in"}</button>
-          <p className="field-help">Need a workspace? <button type="button" className="auth-link" onClick={() => setView("about")}>See details and contact us</button></p>
+          <input
+            id="password"
+            type="password"
+            value={password}
+            placeholder="Enter your password"
+            autoComplete="current-password"
+            onChange={(event) => setPassword(event.target.value)}
+            required
+          />
+          <button type="submit" disabled={busy}>{busy ? "Please wait…" : copy.submit}</button>
+          <p className="field-help">
+            {copy.otherPrompt}{" "}
+            <button type="button" className="auth-link" onClick={() => go(platform ? "/login" : "/admin")}>
+              {copy.otherAction}
+            </button>
+          </p>
+          {platform ? null : (
+            <p className="field-help">
+              Need a workspace?{" "}
+              <button type="button" className="auth-link" onClick={() => go("/")}>See details and contact us</button>
+            </p>
+          )}
         </form>
       </section>
     </div>
   );
+}
+
+const tenantCopy = {
+  eyebrow: "SaaS administrator",
+  headline: "Publish routes for your product.",
+  story: "This sign-in is for the person who runs your organization’s gateway. Gatekeeper staff use a different page.",
+  points: [
+    "You only see your company, for example /foodfast/order",
+    "Map public paths to private services and set origin plus user-token checks",
+    "Customer login stays in your app; this console is not for end users"
+  ],
+  foot: "Accounts are created when we provision the organization. There is no public signup.",
+  formEyebrow: "Organization console",
+  formTitle: "SaaS administrator sign in",
+  lede: "Use the email created for your company, not a Gatekeeper staff account.",
+  emailPlaceholder: "priya@foodfast.com",
+  submit: "Sign in to your organization",
+  otherPrompt: "Gatekeeper staff?",
+  otherAction: "Platform admin sign in"
+};
+
+const platformCopy = {
+  eyebrow: "Platform admin",
+  headline: "Provision tenants. Do not publish their routes here.",
+  story: "This sign-in is only for Gatekeeper administrators who create, suspend, and remove organizations.",
+  points: [
+    "Create the organization, slug, and one SaaS administrator",
+    "Review access requests from the public contact page",
+    "Tenant routing lives in the organization console, not here"
+  ],
+  foot: "SaaS administrators cannot use this page, even with a valid password.",
+  formEyebrow: "Gatekeeper Cloud",
+  formTitle: "Platform admin sign in",
+  lede: "Use your Gatekeeper staff email. Organization logins are rejected here.",
+  emailPlaceholder: "platform@gatekeeper.local",
+  submit: "Sign in to platform",
+  otherPrompt: "SaaS administrator?",
+  otherAction: "Organization sign in"
+};
+
+function finish(result, intendedPortal, onSuccess, fail) {
+  const role = result?.admin?.role;
+  const wantsPlatform = intendedPortal === "platform";
+  const isPlatform = role === "PLATFORM_ADMIN";
+  if (wantsPlatform !== isPlatform) {
+    fail(wantsPlatform
+      ? "This account is a SaaS administrator login. Use the organization sign-in page."
+      : "This account is a Gatekeeper platform login. Use the platform admin page.");
+    return;
+  }
+  sessionStorage.removeItem("gk.portal");
+  onSuccess(result.token, result.admin);
 }
 
 function GoogleIcon() {

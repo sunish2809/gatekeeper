@@ -48,7 +48,7 @@ public class AuthController {
 
     @PostMapping("/login")
     public AuthResult login(@Valid @RequestBody LoginRequest request) {
-        return auth.login(request.email(), request.password());
+        return auth.login(request.email(), request.password(), AuthService.parsePortal(request.portal()));
     }
 
     @GetMapping("/me")
@@ -72,7 +72,8 @@ public class AuthController {
 
     public record LoginRequest(
             @NotBlank @Email String email,
-            @NotBlank String password
+            @NotBlank String password,
+            String portal
     ) {
     }
 }

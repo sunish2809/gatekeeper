@@ -962,6 +962,15 @@ pre {
 }
 .about-nav .brand-kicker { color: #9fd4b8; }
 .about-nav h1 { font-size: 18px; color: #f4fff8; }
+.about-nav-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.about-nav-actions .secondary {
+  color: #e9fff1;
+  border-color: rgba(233, 255, 241, .28);
+  background: transparent;
+}
+.about-nav-actions .secondary:hover:not(:disabled) {
+  background: rgba(233, 255, 241, .08);
+}
 .about-main { width: min(1080px, 100%); margin: 0 auto; padding: 28px 20px 64px; }
 .about-hero { margin-bottom: 22px; }
 .about-hero h2 { font-size: clamp(28px, 4vw, 42px); margin: 0 0 12px; letter-spacing: -0.04em; }
@@ -1058,7 +1067,8 @@ pre {
   .auth-form-wrap { min-height: calc(100vh - 88px); padding: 24px 16px; }
   .auth-card { padding: 24px; }
   .about-grid { grid-template-columns: 1fr; }
-  .about-nav { padding: 12px 16px; }
+  .about-nav { padding: 12px 16px; flex-wrap: wrap; }
+  .about-nav-actions { width: 100%; justify-content: flex-end; }
   .guide-code-grid, .guide-steps { grid-template-columns: 1fr; }
   .architecture-flow { display: flex; flex-direction: column; }
   .architecture-flow .flow-node,

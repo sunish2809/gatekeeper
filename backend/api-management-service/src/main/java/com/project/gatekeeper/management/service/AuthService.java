@@ -30,12 +30,27 @@ public class AuthService {
     }
 
     @Transactional(readOnly = true)
-    public AuthResult login(String email, String password) {
+    public AuthResult login(String email, String password, AdminRole portal) {
         AdminEntity admin = admins.findByEmailIgnoreCase(email.trim())
                 .filter(found -> passwords.matches(password, found.getPasswordHash()))
                 .orElseThrow(() -> new ApiException(HttpStatus.UNAUTHORIZED, "unauthorized", "Email or password is wrong"));
+        ensurePortal(admin, portal);
         ensureCanSignIn(admin);
         return result(admin);
+    }
+
+    public static AdminRole parsePortal(String portal) {
+        if (portal == null || portal.isBlank()) {
+            return null;
+        }
+        String value = portal.trim().toUpperCase();
+        if ("PLATFORM".equals(value) || "PLATFORM_ADMIN".equals(value)) {
+            return AdminRole.PLATFORM_ADMIN;
+        }
+        if ("TENANT".equals(value) || "TENANT_ADMIN".equals(value) || "ORGANIZATION".equals(value)) {
+            return AdminRole.TENANT_ADMIN;
+        }
+        throw new ApiException(HttpStatus.BAD_REQUEST, "invalid_portal", "portal must be PLATFORM or TENANT");
     }
 
     @Transactional(readOnly = true)
@@ -75,6 +90,22 @@ public class AuthService {
                 organization == null ? null : organization.getName(),
                 organization == null ? null : organization.getSlug(),
                 organization == null ? null : organization.getStatus().name());
+    }
+
+    private void ensurePortal(AdminEntity admin, AdminRole portal) {
+        if (portal == null) {
+            return;
+        }
+        AdminRole actual = admin.getRole() == null ? AdminRole.PLATFORM_ADMIN : admin.getRole();
+        if (actual == portal) {
+            return;
+        }
+        if (portal == AdminRole.PLATFORM_ADMIN) {
+            throw new ApiException(HttpStatus.FORBIDDEN, "wrong_portal",
+                    "This account is a SaaS administrator login. Use the organization sign-in page.");
+        }
+        throw new ApiException(HttpStatus.FORBIDDEN, "wrong_portal",
+                "This account is a Gatekeeper platform login. Use the platform admin page.");
     }
 
     private void ensureCanSignIn(AdminEntity admin) {
