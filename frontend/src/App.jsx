@@ -229,7 +229,7 @@ export default function App() {
     if (portal) {
       return <AuthScreen portal={portal} onSuccess={enter} />;
     }
-    return <AboutPage />;
+    return <AboutPage onSuccess={enter} />;
   }
 
   if (admin?.role === "PLATFORM_ADMIN") {
@@ -242,7 +242,7 @@ export default function App() {
         <div className="brand">
           <span className="brand-mark" aria-hidden="true">G</span>
           <div>
-            <span className="brand-kicker">Organization console</span>
+            <span className="brand-kicker">{admin?.organizationSlug === "demo" ? "Shared demo" : "Organization console"}</span>
             <h1>{admin?.organizationName || "SaaS administrator"}</h1>
           </div>
         </div>
@@ -257,6 +257,12 @@ export default function App() {
       </header>
       <main>
         {error ? <div className="banner">{error}</div> : null}
+        {admin?.organizationSlug === "demo" ? (
+          <div className="demo-banner">
+            <strong>Shared demo workspace</strong>
+            <span>Recruiters share this organization. Routes may change. Production tenants still sign in at /login after we provision them.</span>
+          </div>
+        ) : null}
         <section className="workspace-head">
           <div>
             <p className="eyebrow">API operations</p>

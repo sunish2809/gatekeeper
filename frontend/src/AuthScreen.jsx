@@ -9,12 +9,19 @@ export default function AuthScreen({ portal, onSuccess }) {
   const [error, setError] = useState(() => sessionStorage.getItem("gk.authError") || "");
   const [busy, setBusy] = useState(false);
   const [googleEnabled, setGoogleEnabled] = useState(false);
+  const [demoEnabled, setDemoEnabled] = useState(false);
   const oidcHandled = useRef(false);
 
   useEffect(() => {
     publicGet("/api/auth/options")
-      .then((options) => setGoogleEnabled(!!options.googleOidcEnabled))
-      .catch(() => setGoogleEnabled(false));
+      .then((options) => {
+        setGoogleEnabled(!!options.googleOidcEnabled);
+        setDemoEnabled(!!options.demoEnabled);
+      })
+      .catch(() => {
+        setGoogleEnabled(false);
+        setDemoEnabled(false);
+      });
     const storedError = sessionStorage.getItem("gk.authError");
     if (storedError) {
       sessionStorage.removeItem("gk.authError");
@@ -46,6 +53,19 @@ export default function AuthScreen({ portal, onSuccess }) {
       })
       .finally(() => setBusy(false));
   }, [onSuccess, platform, portal]);
+
+  async function tryDemo() {
+    setError("");
+    setBusy(true);
+    try {
+      const result = await publicApi("/api/auth/demo", {});
+      onSuccess(result.token, result.admin);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -125,18 +145,21 @@ export default function AuthScreen({ portal, onSuccess }) {
             required
           />
           <button type="submit" disabled={busy}>{busy ? "Please wait…" : copy.submit}</button>
+          {demoEnabled ? (
+            <button type="button" className="secondary" disabled={busy} onClick={tryDemo}>
+              Try the shared demo
+            </button>
+          ) : null}
           <p className="field-help">
             {copy.otherPrompt}{" "}
             <button type="button" className="auth-link" onClick={() => go(platform ? "/login" : "/admin")}>
               {copy.otherAction}
             </button>
           </p>
-          {platform ? null : (
-            <p className="field-help">
-              Need a workspace?{" "}
-              <button type="button" className="auth-link" onClick={() => go("/")}>See details and contact us</button>
-            </p>
-          )}
+          <p className="field-help">
+            New here?{" "}
+            <button type="button" className="auth-link" onClick={() => go("/")}>How we work with you</button>
+          </p>
         </form>
       </section>
     </div>

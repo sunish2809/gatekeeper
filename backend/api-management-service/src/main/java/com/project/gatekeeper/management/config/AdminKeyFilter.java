@@ -56,6 +56,7 @@ public class AdminKeyFilter extends OncePerRequestFilter {
                 || path.startsWith("/health/")
                 || path.equals("/api/auth/options")
                 || path.equals("/api/auth/login")
+                || path.equals("/api/auth/demo")
                 || path.equals("/api/auth/register")
                 || path.equals("/api/auth/oidc/exchange")
                 || (path.equals("/api/inquiries") && "POST".equalsIgnoreCase(request.getMethod()))

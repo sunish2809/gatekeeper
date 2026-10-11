@@ -141,7 +141,7 @@ curl https://<gateway-domain>/health
 curl https://<gateway-domain>/health/routes
 ```
 
-Then open `https://<frontend-domain>` as the platform admin (`GATEKEEPER_PLATFORM_EMAIL`), create an organization and tenant admin, sign in as that tenant, and add a route. Production targets should be private Railway URLs or otherwise unreachable from the public internet. `https://httpbin.org` is only a smoke-test target. Example: slug `demo`, public path `/bin` (stored as `/demo/bin`), target `https://httpbin.org`, strip prefix on, then:
+Then open `https://<frontend-domain>` and click **Try demo** to enter the seeded tenant, or sign in as the platform admin (`GATEKEEPER_PLATFORM_EMAIL`) to provision a real organization. Production targets should be private Railway URLs or otherwise unreachable from the public internet. `https://httpbin.org` is only a smoke-test target. Example: slug `demo`, public path `/bin` (stored as `/demo/bin`), target `https://httpbin.org`, strip prefix on, then:
 
 ```bash
 curl https://<gateway-domain>/demo/bin/get

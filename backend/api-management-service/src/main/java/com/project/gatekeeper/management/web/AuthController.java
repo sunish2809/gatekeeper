@@ -4,6 +4,7 @@ import com.project.gatekeeper.management.security.CurrentAdmin;
 import com.project.gatekeeper.management.security.OidcLoginCodes;
 import com.project.gatekeeper.management.service.AuthService;
 import com.project.gatekeeper.management.service.AuthService.AuthResult;
+import com.project.gatekeeper.management.service.DemoTenantService;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -22,22 +23,25 @@ public class AuthController {
     private final AuthService auth;
     private final OidcLoginCodes oidcCodes;
     private final CurrentAdmin currentAdmin;
+    private final DemoTenantService demo;
     private final boolean googleOidcEnabled;
     private final String contactEmail;
 
     public AuthController(AuthService auth, OidcLoginCodes oidcCodes, CurrentAdmin currentAdmin,
+                          DemoTenantService demo,
                           @Value("${gatekeeper.oidc.enabled:false}") boolean googleOidcEnabled,
                           @Value("${gatekeeper.contact-email:}") String contactEmail) {
         this.auth = auth;
         this.oidcCodes = oidcCodes;
         this.currentAdmin = currentAdmin;
+        this.demo = demo;
         this.googleOidcEnabled = googleOidcEnabled;
         this.contactEmail = contactEmail == null ? "" : contactEmail.trim();
     }
 
     @GetMapping("/options")
     public AuthOptions options() {
-        return new AuthOptions(googleOidcEnabled, contactEmail.isBlank() ? null : contactEmail);
+        return new AuthOptions(googleOidcEnabled, contactEmail.isBlank() ? null : contactEmail, demo.enabled());
     }
 
     @PostMapping("/register")
@@ -49,6 +53,11 @@ public class AuthController {
     @PostMapping("/login")
     public AuthResult login(@Valid @RequestBody LoginRequest request) {
         return auth.login(request.email(), request.password(), AuthService.parsePortal(request.portal()));
+    }
+
+    @PostMapping("/demo")
+    public AuthResult demo() {
+        return demo.login();
     }
 
     @GetMapping("/me")
@@ -64,7 +73,7 @@ public class AuthController {
         return oidcCodes.consume(request.code());
     }
 
-    public record AuthOptions(boolean googleOidcEnabled, String contactEmail) {
+    public record AuthOptions(boolean googleOidcEnabled, String contactEmail, boolean demoEnabled) {
     }
 
     public record OidcExchangeRequest(@NotBlank String code) {

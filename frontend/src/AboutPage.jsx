@@ -2,18 +2,40 @@ import { useEffect, useState } from "react";
 import { publicApi, publicGet } from "./api.js";
 import { go } from "./nav.js";
 
-export default function AboutPage() {
+export default function AboutPage({ onSuccess }) {
   const [contactEmail, setContactEmail] = useState("");
+  const [demoEnabled, setDemoEnabled] = useState(false);
   const [form, setForm] = useState({ name: "", company: "", email: "", website: "", message: "" });
   const [error, setError] = useState("");
+  const [demoError, setDemoError] = useState("");
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [demoBusy, setDemoBusy] = useState(false);
 
   useEffect(() => {
     publicGet("/api/auth/options")
-      .then((options) => setContactEmail(options.contactEmail || ""))
-      .catch(() => setContactEmail(""));
+      .then((options) => {
+        setContactEmail(options.contactEmail || "");
+        setDemoEnabled(!!options.demoEnabled);
+      })
+      .catch(() => {
+        setContactEmail("");
+        setDemoEnabled(false);
+      });
   }, []);
+
+  async function tryDemo() {
+    setDemoError("");
+    setDemoBusy(true);
+    try {
+      const result = await publicApi("/api/auth/demo", {});
+      onSuccess(result.token, result.admin);
+    } catch (err) {
+      setDemoError(err.message);
+    } finally {
+      setDemoBusy(false);
+    }
+  }
 
   async function submit(event) {
     event.preventDefault();
@@ -41,7 +63,10 @@ export default function AboutPage() {
         </div>
         <div className="about-nav-actions">
           <button type="button" className="secondary" onClick={() => go("/admin")}>Platform admin</button>
-          <button type="button" onClick={() => go("/login")}>SaaS administrator</button>
+          <button type="button" className="secondary" onClick={() => go("/login")}>SaaS administrator</button>
+          {demoEnabled ? (
+            <button type="button" onClick={tryDemo} disabled={demoBusy}>{demoBusy ? "Opening demo…" : "Try demo"}</button>
+          ) : null}
         </div>
       </header>
 
@@ -54,6 +79,16 @@ export default function AboutPage() {
             After you review what we provide, send a request. A Gatekeeper administrator creates your organization
             and the one login for your team.
           </p>
+          {demoEnabled ? (
+            <div className="about-hero-actions">
+              <button type="button" onClick={tryDemo} disabled={demoBusy}>{demoBusy ? "Opening demo…" : "Try the shared demo"}</button>
+              <button type="button" className="secondary" onClick={() => go("/login")}>I already have an account</button>
+            </div>
+          ) : null}
+          {demoError ? <div className="banner">{demoError}</div> : null}
+          {demoEnabled ? (
+            <p className="muted">The demo is a shared Foodfast-style tenant. Open it, publish a route, and use Request Lab. Real companies still go through review.</p>
+          ) : null}
         </section>
 
         <section className="about-grid">
